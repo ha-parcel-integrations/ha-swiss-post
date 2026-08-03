@@ -140,5 +140,6 @@ python -m pytest tests/ --cov=custom_components.swiss_post
 ```
 
 Coverage must stay **above 95%** (silver `test-coverage` rule). Run before
-committing. A code change updates the README + this file + `docs/` in the same
-commit; `docs/api/` is gitignored (local reverse-engineering notes).
+committing. A code change updates the README + this file in the same commit;
+the API reference lives in the private `carrier-research/api/swiss-post/`,
+not in this repo.
