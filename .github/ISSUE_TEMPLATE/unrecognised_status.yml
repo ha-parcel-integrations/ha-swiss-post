@@ -1,0 +1,45 @@
+name: 🏷️ Unrecognised parcel status
+description: The integration logged a warning asking you to report an unrecognised status or event.
+title: "[status] "
+labels: ["unrecognised-status"]
+assignees:
+  - peternijssen
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Swiss Post's status list, its delivery-window fields and its parcel
+        dimensions were all confirmed against a **single** real parcel, so the
+        integration deliberately asks for help whenever it meets something new.
+        Any of these warnings belongs here:
+
+        - `status=… → reported as 'unknown'` — a status value we do not map yet
+        - `reported pickup-point fields (…)` — a parcel waiting at a post
+          office, the single biggest gap in the mapping
+        - `reported a delivery window (…)` — a parcel with a real time window
+        - `we assume length, width, height` — only useful if you know the
+          parcel's real size, so we can confirm the order
+        - `answered 204` — the event-history request format changed
+
+        Paste the full line below. It contains no address or recipient data —
+        the integration logs field names, never their values.
+  - type: textarea
+    id: logline
+    attributes:
+      label: The log line
+      description: Copy the full warning line from your Home Assistant log.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Integration version
+      placeholder: "e.g. 0.9.0"
+    validations:
+      required: true
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant version
+      placeholder: "e.g. 2026.7.0"
