@@ -42,5 +42,3 @@ ENV/
 
 # Local-only API / reverse-engineering notes (never published)
 docs/api/
-
-# Local-only build checklist from the template; deleted once it is empty
