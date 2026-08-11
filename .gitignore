@@ -44,4 +44,3 @@ ENV/
 docs/api/
 
 # Local-only build checklist from the template; deleted once it is empty
-TODO.md
