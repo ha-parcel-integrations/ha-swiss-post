@@ -1,0 +1,144 @@
+{
+  "title": "Swiss Post",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configura Swiss Post",
+        "description": "Il tracciamento Swiss Post non richiede né account né codice postale: l'hub viene creato subito. Aggiungi i pacchi in seguito tramite le opzioni dell'integrazione o il servizio `swiss_post.track_parcel`."
+      }
+    },
+    "abort": {
+      "already_configured": "Swiss Post è già configurato."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opzioni Swiss Post",
+        "sections": {
+          "parcels": {
+            "name": "Pacchi",
+            "data": {
+              "add": "Aggiungi un pacco",
+              "remove": "Rimuovi pacchi"
+            },
+            "data_description": {
+              "add": "Inserisci un codice di tracciamento Swiss Post per iniziare a seguirlo. Lo trovi sulla conferma di spedizione o sull'avviso di giacenza."
+            }
+          },
+          "delivered": {
+            "name": "Pacchi consegnati",
+            "data": {
+              "delivered_filter_type": "Filtra per",
+              "delivered_filter_amount": "Quantità"
+            },
+            "data_description": {
+              "delivered_filter_type": "Mostra i pacchi consegnati negli ultimi X giorni, oppure limita ai X più recenti.",
+              "delivered_filter_amount": "Numero di giorni o pacchi da mostrare."
+            }
+          },
+          "history": {
+            "name": "Cronologia pacchi",
+            "data": {
+              "include_history": "Includi cronologia degli stati"
+            },
+            "data_description": {
+              "include_history": "Aggiunge a ogni pacco un attributo di cronologia con ogni aggiornamento di stato (data e ora, stato, testo originale). Disattivato per impostazione predefinita."
+            }
+          },
+          "polling": {
+            "name": "Interrogazione",
+            "data": {
+              "refresh_interval": "Aggiorna ogni"
+            },
+            "data_description": {
+              "refresh_interval": "Con quale frequenza l'integrazione controlla presso Swiss Post gli aggiornamenti dei pacchi. Un intervallo più lento è più leggero per l'API di Swiss Post; il valore predefinito di 30 minuti è sufficiente per la maggior parte dei pacchi."
+            }
+          }
+        }
+      }
+    },
+    "error": {
+      "invalid_tracking_code": "Non sembra un codice di tracciamento Swiss Post.",
+      "already_tracked": "Questo pacco è già monitorato."
+    }
+  },
+  "selector": {
+    "refresh_interval": {
+      "options": {
+        "15": "15 minuti",
+        "30": "30 minuti",
+        "60": "60 minuti",
+        "120": "120 minuti",
+        "240": "240 minuti"
+      }
+    },
+    "delivered_filter_type": {
+      "options": {
+        "days": "Giorni",
+        "parcels": "Numero di pacchi"
+      }
+    }
+  },
+  "services": {
+    "track_parcel": {
+      "name": "Traccia pacco",
+      "description": "Avvia il tracciamento di un pacco tramite il suo codice di tracciamento Swiss Post.",
+      "fields": {
+        "tracking_code": {
+          "name": "Codice di tracciamento",
+          "description": "Il codice di tracciamento Swiss Post."
+        }
+      }
+    },
+    "untrack_parcel": {
+      "name": "Interrompi tracciamento pacco",
+      "description": "Interrompe il tracciamento di un pacco tramite il suo codice di tracciamento Swiss Post.",
+      "fields": {
+        "tracking_code": {
+          "name": "Codice di tracciamento",
+          "description": "Il codice di tracciamento Swiss Post di cui interrompere il tracciamento."
+        }
+      }
+    }
+  },
+  "device_automation": {
+    "trigger_type": {
+      "parcel_registered": "Un pacco è stato registrato",
+      "parcel_status_changed": "Lo stato di un pacco è cambiato",
+      "parcel_delivered": "Un pacco è stato consegnato",
+      "parcel_delivery_time_changed": "L'orario di consegna previsto di un pacco è cambiato"
+    }
+  },
+  "entity": {
+    "button": {
+      "refresh": {
+        "name": "Aggiorna"
+      }
+    },
+    "calendar": {
+      "deliveries": {
+        "name": "Consegne"
+      }
+    },
+    "sensor": {
+      "incoming_parcels": {
+        "name": "Pacchi in arrivo",
+        "unit_of_measurement": "pacchi"
+      },
+      "next_delivery": {
+        "name": "Prossima consegna"
+      },
+      "delivered_parcels": {
+        "name": "Pacchi consegnati",
+        "unit_of_measurement": "pacchi"
+      },
+      "last_update": {
+        "name": "Ultimo aggiornamento riuscito"
+      },
+      "parcel": {
+        "name": "Pacco {barcode}"
+      }
+    }
+  }
+}
