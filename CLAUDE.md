@@ -35,7 +35,7 @@ you act in one of these areas:
 ## Carrier-specific notes
 
 API mechanics (both endpoints, the handshake, the payload map, the status
-vocabulary, the traps) live in `carrier-research/api/swiss-post/` in the private
+vocabulary, the traps) live in `carrier-research/swiss-post/api/` in the private
 research repo — **not** here and not in a local `docs/api/`. What follows is
 integration-side only.
 
@@ -133,5 +133,5 @@ python -m pytest tests/ --cov=custom_components.swiss_post
 
 Coverage must stay **above 95%** (silver `test-coverage` rule). Run before
 committing. A code change updates the README + this file in the same commit;
-the API reference lives in the private `carrier-research/api/swiss-post/`,
+the API reference lives in the private `carrier-research/swiss-post/api/`,
 not in this repo.
