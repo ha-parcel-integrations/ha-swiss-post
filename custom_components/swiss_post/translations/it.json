@@ -55,6 +55,25 @@
               "refresh_interval": "Con quale frequenza l'integrazione controlla presso Swiss Post gli aggiornamenti dei pacchi. Un intervallo più lento è più leggero per l'API di Swiss Post; il valore predefinito di 30 minuti è sufficiente per la maggior parte dei pacchi."
             }
           }
+        },
+        "menu_options": {
+          "parcels": "Pacchi",
+          "settings": "Impostazioni"
+        }
+      },
+      "parcels": {
+        "title": "Pacchi",
+        "data": {
+          "tracking_codes": "Codici di tracciamento"
+        }
+      },
+      "settings": {
+        "title": "Impostazioni",
+        "data": {
+          "delivered_filter_type": "Pacchi consegnati: filtra per",
+          "delivered_filter_amount": "Pacchi consegnati: quantità",
+          "include_history": "Includi cronologia dello stato",
+          "refresh_interval": "Aggiorna ogni"
         }
       }
     },

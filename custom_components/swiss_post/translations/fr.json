@@ -55,6 +55,25 @@
               "refresh_interval": "Fréquence à laquelle l'intégration vérifie auprès de Swiss Post les mises à jour des colis. Un intervalle plus lent ménage l'API de Swiss Post ; la valeur par défaut de 30 minutes suffit pour la plupart des colis."
             }
           }
+        },
+        "menu_options": {
+          "parcels": "Colis",
+          "settings": "Paramètres"
+        }
+      },
+      "parcels": {
+        "title": "Colis",
+        "data": {
+          "tracking_codes": "Codes de suivi"
+        }
+      },
+      "settings": {
+        "title": "Paramètres",
+        "data": {
+          "delivered_filter_type": "Colis livrés : filtrer par",
+          "delivered_filter_amount": "Colis livrés : nombre",
+          "include_history": "Inclure l’historique des statuts",
+          "refresh_interval": "Actualiser toutes les"
         }
       }
     },

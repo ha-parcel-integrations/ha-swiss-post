@@ -55,6 +55,25 @@
               "refresh_interval": "Wie oft die Integration bei Swiss Post nach Paketaktualisierungen sucht. Ein langsameres Intervall schont die API von Swiss Post; der Standardwert von 30 Minuten reicht für die meisten Pakete aus."
             }
           }
+        },
+        "menu_options": {
+          "parcels": "Pakete",
+          "settings": "Einstellungen"
+        }
+      },
+      "parcels": {
+        "title": "Pakete",
+        "data": {
+          "tracking_codes": "Sendungsnummern"
+        }
+      },
+      "settings": {
+        "title": "Einstellungen",
+        "data": {
+          "delivered_filter_type": "Zugestellte Pakete: filtern nach",
+          "delivered_filter_amount": "Zugestellte Pakete: Anzahl",
+          "include_history": "Statusverlauf einbeziehen",
+          "refresh_interval": "Aktualisieren alle"
         }
       }
     },
