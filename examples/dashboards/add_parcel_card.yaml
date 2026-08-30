@@ -28,8 +28,6 @@ swiss_post_track_new_parcel:
     - action: swiss_post.track_parcel
       data:
         tracking_code: "{{ states('input_text.swiss_post_new_parcel') | trim }}"
-        
-        
     - action: input_text.set_value
       target:
         entity_id: input_text.swiss_post_new_parcel
