@@ -91,16 +91,29 @@ inferred from `deliveryPostOfficeZip` / `avis` instead), `deliveryRange` /
 
 The options flow is one sectioned form (`data_entry_flow.section`); changes apply
 without a restart. Two models, **do not mix them**:
-- **Account-less carriers** (the default) apply changes live: an update listener
-  retunes `coordinator.update_interval` and calls `async_request_refresh()`, so
-  added/removed parcel sensors appear immediately.
+- **Account-less carriers** (the default, and what this repo is) apply changes
+  live: an update listener calls `async_request_refresh()`, so added/removed
+  parcel sensors appear immediately. This is also the resume path after
+  dynamic polling has fully suspended (see below) — adding a parcel back
+  triggers the same refresh, which re-arms scheduling.
 - **Account-based carriers** call `async_schedule_reload` on submit and register
   **no** update listener. Combining a listener with a reload-on-update flow is
   deprecated, an error in HA 2026.12+.
 
-The user-tunable poll interval is a deliberate HACS divergence (see
-CONVENTIONS.md); a carrier that throttles is generated with a fixed cadence and no
-polling option at all.
+## Polling
+
+Polling is dynamic and status-driven, unconditionally — there is no
+user-facing interval option. The coordinator recomputes its own cadence at the
+end of every refresh: a quiet window (00:00–06:00 local, with catch-up anchors
+at each end), a 15-minute hot tier when a tracked parcel is
+`out_for_delivery` (immediately, or from an hour before `planned_from`), a
+45-minute mid tier otherwise, and a full stop (`update_interval = None`) when
+nothing is tracked or everything tracked is delivered. Swiss Post's
+`planned_from` is normally populated even for a same-day `out_for_delivery`
+parcel — `calculatedDeliveryDate` is a day-level estimate every parcel
+carries, so the hot/mid split behaves as designed rather than always landing
+on the "no `planned_from`" branch. See `coordinator.py`'s
+`_hottest_tier_minutes` / `_next_update_interval`.
 
 ## Module layout
 

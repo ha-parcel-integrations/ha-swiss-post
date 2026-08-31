@@ -10,7 +10,7 @@ from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
 from .api import SwissPostApiClient
 from .const import PLATFORMS
-from .coordinator import SwissPostCoordinator, _refresh_interval
+from .coordinator import SwissPostCoordinator
 from .services import async_setup_services, async_unload_services
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,10 +49,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: SwissPostConfigEntry) ->
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    # Apply option changes (added/removed parcels, interval, history) live via
-    # a coordinator refresh — no reload — so per-parcel sensors appear and
+    # Apply option changes (added/removed parcels, history) live via a
+    # coordinator refresh — no reload — so per-parcel sensors appear and
     # disappear immediately. The update listener does NOT reload, so it does
-    # not trip the config-entry-listener deprecation.
+    # not trip the config-entry-listener deprecation. This is also the resume
+    # path after polling fully suspended: adding a parcel back triggers this
+    # refresh, which recomputes the tier and re-arms scheduling.
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
 
     async_setup_services(hass)
@@ -63,10 +65,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: SwissPostConfigEntry) ->
 async def _async_options_updated(
     hass: HomeAssistant, entry: SwissPostConfigEntry
 ) -> None:
-    """Apply changed options: retune the interval and refresh the coordinator."""
-    coordinator = entry.runtime_data.coordinator
-    coordinator.update_interval = _refresh_interval(entry)
-    await coordinator.async_request_refresh()
+    """Apply changed options by refreshing the coordinator."""
+    await entry.runtime_data.coordinator.async_request_refresh()
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: SwissPostConfigEntry) -> bool:

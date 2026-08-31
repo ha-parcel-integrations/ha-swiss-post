@@ -45,15 +45,6 @@
             "data_description": {
               "include_history": "Aggiunge a ogni pacco un attributo di cronologia con ogni aggiornamento di stato (data e ora, stato, testo originale). Disattivato per impostazione predefinita."
             }
-          },
-          "polling": {
-            "name": "Interrogazione",
-            "data": {
-              "refresh_interval": "Aggiorna ogni"
-            },
-            "data_description": {
-              "refresh_interval": "Con quale frequenza l'integrazione controlla presso Swiss Post gli aggiornamenti dei pacchi. Un intervallo più lento è più leggero per l'API di Swiss Post; il valore predefinito di 30 minuti è sufficiente per la maggior parte dei pacchi."
-            }
           }
         },
         "menu_options": {
@@ -72,8 +63,7 @@
         "data": {
           "delivered_filter_type": "Pacchi consegnati: filtra per",
           "delivered_filter_amount": "Pacchi consegnati: quantità",
-          "include_history": "Includi cronologia dello stato",
-          "refresh_interval": "Aggiorna ogni"
+          "include_history": "Includi cronologia dello stato"
         }
       }
     },
@@ -83,15 +73,6 @@
     }
   },
   "selector": {
-    "refresh_interval": {
-      "options": {
-        "15": "15 minuti",
-        "30": "30 minuti",
-        "60": "60 minuti",
-        "120": "120 minuti",
-        "240": "240 minuti"
-      }
-    },
     "delivered_filter_type": {
       "options": {
         "days": "Giorni",
