@@ -45,7 +45,6 @@ Part of the [ha-parcel-integrations](https://github.com/ha-parcel-integrations) 
 
 ## Requirements
 
-- Home Assistant 2024.12 or newer
 - A Swiss Post parcel and its tracking code (from the shipping
   confirmation email or the missed-delivery card) — no account needed
 - Tracking codes come in two shapes, both accepted: the 18-digit domestic
