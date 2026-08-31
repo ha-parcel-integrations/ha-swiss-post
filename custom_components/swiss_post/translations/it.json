@@ -57,12 +57,12 @@
           }
         },
         "menu_options": {
-          "parcels": "Pacchi",
+          "parcels": "Gestisci i pacchi",
           "settings": "Impostazioni"
         }
       },
       "parcels": {
-        "title": "Pacchi",
+        "title": "Gestisci i pacchi",
         "data": {
           "tracking_codes": "Codici di tracciamento"
         }

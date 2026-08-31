@@ -57,12 +57,12 @@
           }
         },
         "menu_options": {
-          "parcels": "Pakete",
+          "parcels": "Pakete verwalten",
           "settings": "Einstellungen"
         }
       },
       "parcels": {
-        "title": "Pakete",
+        "title": "Pakete verwalten",
         "data": {
           "tracking_codes": "Sendungsnummern"
         }

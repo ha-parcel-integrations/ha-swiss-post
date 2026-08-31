@@ -57,12 +57,12 @@
           }
         },
         "menu_options": {
-          "parcels": "Colis",
+          "parcels": "Gérer les colis",
           "settings": "Paramètres"
         }
       },
       "parcels": {
-        "title": "Colis",
+        "title": "Gérer les colis",
         "data": {
           "tracking_codes": "Codes de suivi"
         }
