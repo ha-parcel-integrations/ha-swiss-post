@@ -39,6 +39,15 @@ vocabulary, the traps) live in `carrier-research/swiss-post/api/` in the private
 research repo — **not** here and not in a local `docs/api/`. What follows is
 integration-side only.
 
+**No `awaiting_pickup` sensor yet — pending a confirmed status token, not a
+structural exemption.** Swiss Post does have a pickup-point concept
+(`deliveryPostOfficeZip`/`avis`/`displayedAvisCode`) and `parcels.py` already
+derives a `pickup: bool` from it, but no `globalStatus` value has been
+confirmed to map to `ParcelStatus.AT_PICKUP_POINT` yet (pre-1.0 gap, one-shot
+WARNING in place, see "Pre-1.0 unknowns" below). Add the sensor the moment
+that token is confirmed — this is not the same as a locker-less carrier's
+structural exemption (`.github/CONVENTIONS.md`'s pickup-point convention).
+
 **Two hosts, each with half the data.** `service.post.ch/ekp-web` has status,
 ETA, weight, dimensions and the delivery booleans but its `events` array is
 always empty; `eosapi.postlogistics.ch` has the event timeline and no usable
