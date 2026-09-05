@@ -53,8 +53,7 @@ CAPABILITIES = frozenset(
 #   else worth mapping (see ``parcels.build_history``).
 #
 # Neither needs a key or an account, but surface A needs a per-session
-# anonymous handshake — cookie plus CSRF token. That flow, its traps and the
-# full payload mapping live in ``carrier-research/api/swiss-post/``.
+# anonymous handshake — cookie plus CSRF token.
 
 # --- Surface A: the consumer tracking API behind Swiss Post's own web UI -----
 EKP_USER_URL = "https://service.post.ch/ekp-web/api/user"
@@ -105,8 +104,7 @@ DEFAULT_DELIVERED_FILTER_TYPE = "days"
 DEFAULT_DELIVERED_FILTER_AMOUNT = 7
 
 # Dynamic, status-driven polling — unconditional, no user-facing interval
-# option. See carrier-research/dynamic-polling.md for the full algorithm and
-# the reasoning behind it.
+# option.
 #
 # Quiet window: no polling between these local hours except the two anchors
 # below, for overnight / end-of-day catch-up.
