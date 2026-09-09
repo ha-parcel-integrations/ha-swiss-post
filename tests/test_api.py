@@ -71,6 +71,7 @@ def _reset_one_shot_logs():
     """Clear the module's one-shot log sets between tests."""
     api_module._empty_result_logged.clear()
     api_module._history_204_logged.clear()
+    api_module._history_null_data_logged.clear()
     yield
 
 
@@ -333,7 +334,6 @@ async def test_history_204_warns_only_once(caplog):
     "body,expected",
     [
         ({"Type": 3, "Data": []}, []),
-        ({"Type": 3, "Data": None}, []),
         ({"Type": 3, "Data": [{"Identifier": DELIVERED_CODE}]}, []),
         ({"Type": 3, "Data": [{"History": None}]}, []),
     ],
@@ -341,6 +341,37 @@ async def test_history_204_warns_only_once(caplog):
 async def test_history_tolerates_thin_envelopes(body, expected):
     client = SwissPostApiClient(_session(gets=[], posts=[_response(200, body)]))
     assert await client.async_get_history(DELIVERED_CODE) == expected
+
+
+async def test_history_null_data_is_a_malformed_request_not_an_unknown_parcel(
+    caplog,
+):
+    """A silent-200 sibling of the 204 case: {"Data": null} instead of 204."""
+    client = SwissPostApiClient(
+        _session(gets=[], posts=[_response(200, {"Type": 3, "Data": None})])
+    )
+
+    events = await client.async_get_history(DELIVERED_CODE)
+
+    assert events == []
+    assert "did not understand our request" in caplog.text
+    assert "issues/new" in caplog.text
+
+
+async def test_history_null_data_warns_only_once(caplog):
+    session = _session(
+        gets=[],
+        posts=[
+            _response(200, {"Type": 3, "Data": None}),
+            _response(200, {"Type": 3, "Data": None}),
+        ],
+    )
+    client = SwissPostApiClient(session)
+
+    await client.async_get_history(DELIVERED_CODE)
+    await client.async_get_history(DELIVERED_CODE)
+
+    assert caplog.text.count("did not understand our request") == 1
 
 
 @pytest.mark.parametrize(

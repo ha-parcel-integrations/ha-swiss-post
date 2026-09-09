@@ -54,6 +54,7 @@ _EOS_HEADERS = {
 # request, so each is logged once per HA session instead of on every poll.
 _empty_result_logged: set[str] = set()
 _history_204_logged: set[str] = set()
+_history_null_data_logged: set[str] = set()
 
 
 class SwissPostApiError(Exception):
@@ -290,6 +291,12 @@ class SwissPostApiClient:
             raise SwissPostApiError("unexpected history body (not a JSON object)")
 
         data = payload.get("Data")
+        if data is None:
+            # A silent-200 sibling of the 204 case: the endpoint didn't
+            # recognise the request but answered with a null payload instead
+            # of an empty status. Distinct from a legitimately empty `[]`.
+            self._warn_history_null_data(tracking_code)
+            return []
         if not isinstance(data, list) or not data:
             return []
         first = data[0]
@@ -321,6 +328,25 @@ class SwissPostApiClient:
             "Swiss Post's event history endpoint answered 204 for %s. That means "
             "it did not understand our request, not that the parcel is unknown — "
             "the expected request format has probably changed. Please report it: "
+            "https://github.com/ha-parcel-integrations/ha-swiss-post/issues/new",
+            tracking_code,
+        )
+
+    @staticmethod
+    def _warn_history_null_data(tracking_code: str) -> None:
+        """Warn once about a 200 with a null ``Data`` from the history endpoint.
+
+        A silent-200 sibling of the 204 case: the endpoint didn't recognise
+        the request but answered with ``{"Data": null}`` instead of a 204.
+        """
+        if tracking_code in _history_null_data_logged:
+            return
+        _history_null_data_logged.add(tracking_code)
+        _LOGGER.warning(
+            "Swiss Post's event history endpoint answered 200 with no data at "
+            "all for %s. That means it did not understand our request, not "
+            "that the parcel is unknown — the expected request format has "
+            "probably changed. Please report it: "
             "https://github.com/ha-parcel-integrations/ha-swiss-post/issues/new",
             tracking_code,
         )
