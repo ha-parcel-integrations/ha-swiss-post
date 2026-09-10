@@ -22,6 +22,12 @@ you act in one of these areas:
 | consider "fixing" a lint/pattern the skill flags (poll interval, inline client, sync requests) | *Deliberate skill divergences* — likely intentional, don't re-flag |
 | commit, bump, tag, release, or write release notes; add a feature without a test | *Workflow / Commits / Versioning / Testing* |
 
+**Structure, options flow, dynamic polling and module layout are suite-wide**
+and identical in every carrier — the authoritative spec is
+[`ha-carrier-template/scaffold/CLAUDE.md`](https://github.com/ha-parcel-integrations/ha-carrier-template/blob/main/scaffold/CLAUDE.md).
+Where this repo diverges from it, that is recorded below under
+*Divergences from the scaffold*.
+
 **Suite-wide tripwires, kept inline on purpose:**
 - **First refresh in `__init__.py`, before `async_forward_entry_setups`** — from
   a forwarded platform HA can't catch `ConfigEntryNotReady` and half-sets-up the
@@ -96,56 +102,15 @@ inferred from `deliveryPostOfficeZip` / `avis` instead), `deliveryRange` /
 `dimension1/2/3` → length/width/height order is assumed. The warnings log field
 *names*, never values — a pickup point or a delivery window is location data.
 
-## Options and reloads
+## Divergences from the scaffold
 
-The options flow is one sectioned form (`data_entry_flow.section`); changes apply
-without a restart. Two models, **do not mix them**:
-- **Account-less carriers** (the default, and what this repo is) apply changes
-  live: an update listener calls `async_request_refresh()`, so added/removed
-  parcel sensors appear immediately. This is also the resume path after
-  dynamic polling has fully suspended (see below) — adding a parcel back
-  triggers the same refresh, which re-arms scheduling.
-- **Account-based carriers** call `async_schedule_reload` on submit and register
-  **no** update listener. Combining a listener with a reload-on-update flow is
-  deprecated, an error in HA 2026.12+.
+Everything not listed here follows the scaffold exactly.
 
-## Polling
-
-Polling is dynamic and status-driven, unconditionally — there is no
-user-facing interval option. The coordinator recomputes its own cadence at the
-end of every refresh: a quiet window (00:00–06:00 local, with catch-up anchors
-at each end), a 15-minute hot tier when a tracked parcel is
-`out_for_delivery` (immediately, or from an hour before `planned_from`), a
-45-minute mid tier otherwise, and a full stop (`update_interval = None`) when
-nothing is tracked or everything tracked is delivered. Swiss Post's
-`planned_from` is normally populated even for a same-day `out_for_delivery`
-parcel — `calculatedDeliveryDate` is a day-level estimate every parcel
-carries, so the hot/mid split behaves as designed rather than always landing
-on the "no `planned_from`" branch. See `coordinator.py`'s
-`_hottest_tier_minutes` / `_next_update_interval`.
-
-## Module layout
-
-| File | Carrier-specific? |
-|---|---|
-| `api.py` (HTTP client, error types) | **yes** |
-| `const.py` (domain, URLs, `ParcelStatus`, option keys) | partly (URLs) |
-| `parcels.py` (status map, `normalize_parcel`, history, sort, filters — pure, no I/O) | partly (`_STATUS_MAP`, `normalize_parcel`) |
-| `coordinator.py` (fetch, cache, event firing) | mostly not |
-| `config_flow.py` | partly (code validation) |
-| `sensor.py` / `button.py` / `calendar.py` / `device_trigger.py` | no |
-| `diagnostics.py` | partly (`TO_REDACT`) |
-| `services.py` (`track_parcel` / `untrack_parcel`, account-less only) | no |
-
-`parcels.py` is deliberately free of I/O and HA objects so the per-carrier part
-stays unit-testable without Home Assistant. Config: `ConfigEntry.runtime_data`
-(typed, no `hass.data`), `PARALLEL_UPDATES = 0`, coordinator takes
-`config_entry=entry`. `aiohttp.ClientError` is caught **per parcel** in the gather
-loop (one bad parcel doesn't fail the poll) but **not** around the whole update
-(the coordinator wraps that). Entities: `has_entity_name` + `translation_key`,
-`icons.json`, translated units, `_attr_attribution`, `_unrecorded_attributes` on
-anything with a parcel list or `raw`. Over-redact diagnostics — they get pasted
-into public issues.
+*Dynamic polling* — unlike most account-less carriers, Swiss Post **does**
+populate `planned_from` even for a same-day `out_for_delivery` parcel:
+`calculatedDeliveryDate` is a day-level estimate every parcel carries. The
+hot/mid split therefore behaves as designed rather than always taking the
+"no `planned_from`" branch.
 
 ## Running tests
 
