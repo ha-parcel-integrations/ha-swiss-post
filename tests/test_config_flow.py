@@ -23,14 +23,11 @@ def test_normalize_tracking_code_strips_and_uppercases():
     assert normalize_tracking_code(None) == ""
 
 
-def test_valid_tracking_code_accepts_both_swiss_post_formats():
+def test_valid_tracking_code_accepts_any_non_empty_code():
     assert valid_tracking_code("990012345678901234")  # domestic, 18 digits
     assert valid_tracking_code("RR123456789CH")  # international, S10
-    # Inbound items keep the sending country's S10 suffix.
-    assert valid_tracking_code("LX123456789DE")
-    assert not valid_tracking_code("12345")  # too short to be a parcel number
-    assert not valid_tracking_code("9" * 21)  # too long
-    assert not valid_tracking_code("ORDER12345")  # an order number, not a parcel
+    assert valid_tracking_code("ORDER12345")  # format unconfirmed, still accepted
+    assert not valid_tracking_code("")
 
 
 async def test_user_flow_creates_hub_without_input(hass):

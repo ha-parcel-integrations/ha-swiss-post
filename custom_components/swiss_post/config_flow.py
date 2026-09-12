@@ -30,22 +30,6 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-# A code as printed on the shipping confirmation or the missed-delivery card.
-# Swiss Post uses two shapes:
-#
-# * domestic parcels — 18 digits, usually printed in groups
-#   (``99.00 1234.5678 9012 34``),
-# * international items — the UPU's S10 form, ``RR123456789CH``.
-#
-# Deliberately loose on both: the digit run is allowed any plausible length
-# rather than exactly 18, and the S10 country suffix is any two letters, since
-# Swiss Post also delivers inbound items carrying a foreign carrier's S10 code.
-# A false negative here is far more annoying than a bad code that simply
-# returns "not found" on the next poll. This regex is also what the
-# ``track_parcel`` service and the e-mail-parsing example validate against.
-_TRACKING_CODE_RE = re.compile(r"^(?:\d{8,20}|[A-Z]{2}\d{9}[A-Z]{2})$")
-
-
 def normalize_tracking_code(value: str) -> str:
     """Return the tracking code upper-cased with separators stripped.
 
@@ -57,8 +41,13 @@ def normalize_tracking_code(value: str) -> str:
 
 
 def valid_tracking_code(value: str) -> bool:
-    """Whether ``value`` looks like a Swiss Post tracking code."""
-    return bool(_TRACKING_CODE_RE.match(value))
+    """Accept any non-empty code.
+
+    Swiss Post's real formats (domestic digit runs, international S10 codes)
+    vary too much to gate on client-side; an invalid code just comes back
+    "not found" from the API anyway.
+    """
+    return bool(value)
 
 
 def _current_parcels(entry: ConfigEntry) -> list[dict[str, str]]:
