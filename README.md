@@ -11,7 +11,7 @@ A custom Home Assistant integration that tracks your [Swiss Post](https://www.po
 
 > **Parcels from abroad.** Cross-border parcels are customs-cleared and often handed over by a foreign carrier, so Swiss Post only sees them from the moment they enter its network. Such a parcel can stay `unknown` for a while and then appear mid-journey — that is Swiss Post's view of it, not a fault in the integration.
 
-Part of the [ha-parcel-integrations](https://github.com/ha-parcel-integrations) family: it publishes the same canonical parcel format, statuses and events as the other carrier integrations, so it plugs straight into the [Parcel Aggregator](https://github.com/ha-parcel-integrations/ha-parcel-aggregator) and cross-carrier automations.
+Part of the [ha-parcel-integrations](https://ha-parcel-integrations.io) family: it publishes the same canonical parcel format, statuses and events as the other carrier integrations, so it plugs straight into the [Parcel Aggregator](https://github.com/ha-parcel-integrations/ha-parcel-aggregator) and cross-carrier automations.
 
 ## Contents
 
@@ -195,13 +195,13 @@ logger:
 
 ## Related integrations
 
-This integration is part of [**ha-parcel-integrations**](https://github.com/ha-parcel-integrations) — a family of
+This integration is part of [**ha-parcel-integrations**](https://ha-parcel-integrations.io) — a family of
 parcel-carrier integrations that all publish the same canonical parcel format,
 statuses and events.
 
 - [**Parcel Aggregator**](https://github.com/ha-parcel-integrations/ha-parcel-aggregator) rolls every installed carrier
   up into one set of sensors.
-- Browse [the organisation](https://github.com/ha-parcel-integrations) for the current list of supported carriers.
+- Browse [the organisation](https://ha-parcel-integrations.io) for the current list of supported carriers.
 
 ## Disclaimer
 
