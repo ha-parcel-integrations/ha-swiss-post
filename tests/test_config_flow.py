@@ -1,17 +1,40 @@
 """Tests for the Swiss Post config and options flow."""
+from unittest.mock import AsyncMock, patch
+
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.swiss_post.account.client import (
+    SwissPostAccountApiError,
+    SwissPostAccountInvalidAuth,
+)
 from custom_components.swiss_post.config_flow import (
     normalize_tracking_code,
     valid_tracking_code,
 )
 from custom_components.swiss_post.const import (
+    CONF_ACCOUNT_SUB,
     CONF_DELIVERED_FILTER_AMOUNT,
     CONF_DELIVERED_FILTER_TYPE,
+    CONF_DEVICE_ID,
+    CONF_EMAIL,
+    CONF_ID_TOKEN,
     CONF_INCLUDE_HISTORY,
     CONF_PARCELS,
+    CONF_REFRESH_TOKEN,
+    CONF_SOURCE,
     CONF_TRACKING_CODE,
     DOMAIN,
+    SOURCE_ACCOUNT,
+    SOURCE_TRACKING,
+)
+
+_AUTHORIZE = (
+    "https://login.swissid.ch/idp/oauth2/authorize?x=1",
+    "VERIFIER",
+    "STATE",
+)
+_REDIRECT_OK = (
+    "https://app.post.ch/mainapp/auth/callback?code=THECODE&state=STATE"
 )
 
 
@@ -30,24 +53,208 @@ def test_valid_tracking_code_accepts_any_non_empty_code():
     assert not valid_tracking_code("")
 
 
-async def test_user_flow_creates_hub_without_input(hass):
-    """No account, no postcode — the entry is created straight away."""
+async def _pick_source(hass, source: str):
+    """Open the config flow and choose one of the two sources."""
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": "user"}
     )
+    assert result["type"] == "menu"
+    assert result["menu_options"] == [SOURCE_ACCOUNT, SOURCE_TRACKING]
+    return await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": source}
+    )
+
+
+async def test_tracking_flow_creates_hub_without_input(hass):
+    """No account, no postcode — the tracking hub is created straight away."""
+    result = await _pick_source(hass, SOURCE_TRACKING)
     assert result["type"] == "create_entry"
     assert result["title"] == "Swiss Post"
+    assert result["data"][CONF_SOURCE] == SOURCE_TRACKING
     assert result["options"][CONF_PARCELS] == []
 
 
-async def test_second_hub_rejected(hass):
+async def test_second_tracking_hub_rejected(hass):
+    """Tracking is a single hub — the codes are not scoped to anything.
+
+    The unique_id must stay ``DOMAIN``: hubs created before the account source
+    existed carry that value, and an install upgrading into this version must
+    not be able to add a second hub polling the same surface.
+    """
     MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN).add_to_hass(hass)
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "user"}
-    )
+    result = await _pick_source(hass, SOURCE_TRACKING)
     assert result["type"] == "abort"
-    # single_config_entry in the manifest aborts before the flow runs.
-    assert result["reason"] == "single_instance_allowed"
+    assert result["reason"] == "already_configured"
+
+
+async def test_account_hub_allowed_alongside_a_tracking_hub(hass):
+    """The two sources are separate hubs and must coexist."""
+    MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN).add_to_hass(hass)
+    with (
+        patch(
+            "custom_components.swiss_post.config_flow.SwissPostAccountClient"
+            ".build_authorize_url",
+            return_value=_AUTHORIZE,
+        ),
+        patch(
+            "custom_components.swiss_post.config_flow.SwissPostAccountClient"
+            ".async_exchange_code",
+            new=AsyncMock(
+                return_value={
+                    "id_token": "idt",
+                    "refresh_token": "rt",
+                    "access_token": "at",
+                }
+            ),
+        ),
+        patch(
+            "custom_components.swiss_post.config_flow.decode_jwt_claims",
+            return_value={"sub": "user-1", "email": "me@example.ch"},
+        ),
+    ):
+        result = await _pick_source(hass, SOURCE_ACCOUNT)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"redirect_url": _REDIRECT_OK}
+        )
+    assert result["type"] == "create_entry"
+
+
+async def test_account_flow_keeps_the_pkce_pair_across_a_retry(hass):
+    """A transient failure must not invalidate an unspent authorization code.
+
+    Minting a new challenge on the error re-render would silently break the link
+    the user already signed in with, forcing them to redo the whole browser
+    login and network-log capture.
+    """
+    exchange = AsyncMock(
+        side_effect=[
+            SwissPostAccountApiError("down"),
+            {"id_token": "idt", "refresh_token": "rt", "access_token": "at"},
+        ]
+    )
+    with (
+        patch(
+            "custom_components.swiss_post.config_flow.SwissPostAccountClient"
+            ".build_authorize_url",
+            return_value=_AUTHORIZE,
+        ) as build,
+        patch(
+            "custom_components.swiss_post.config_flow.SwissPostAccountClient"
+            ".async_exchange_code",
+            new=exchange,
+        ),
+        patch(
+            "custom_components.swiss_post.config_flow.decode_jwt_claims",
+            return_value={"sub": "user-1", "email": "me@example.ch"},
+        ),
+    ):
+        result = await _pick_source(hass, SOURCE_ACCOUNT)
+        first_url = result["description_placeholders"]["authorize_url"]
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"redirect_url": _REDIRECT_OK}
+        )
+        assert result["errors"] == {"base": "cannot_connect"}
+        # Same link, same challenge -- the code the user already holds is valid.
+        assert result["description_placeholders"]["authorize_url"] == first_url
+        assert build.call_count == 1
+
+        # Pasting the same address again now succeeds.
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"redirect_url": _REDIRECT_OK}
+        )
+    assert result["type"] == "create_entry"
+
+
+async def test_account_flow_stores_only_the_tokens(hass):
+    """The pasted redirect is exchanged for tokens; no password is ever held."""
+    with (
+        patch(
+            "custom_components.swiss_post.config_flow.SwissPostAccountClient"
+            ".build_authorize_url",
+            return_value=_AUTHORIZE,
+        ),
+        patch(
+            "custom_components.swiss_post.config_flow.SwissPostAccountClient"
+            ".async_exchange_code",
+            new=AsyncMock(
+                return_value={
+                    "id_token": "idt",
+                    "refresh_token": "rt",
+                    "access_token": "at",
+                }
+            ),
+        ),
+        patch(
+            "custom_components.swiss_post.config_flow.decode_jwt_claims",
+            return_value={"sub": "user-1", "email": "me@example.ch"},
+        ),
+    ):
+        result = await _pick_source(hass, SOURCE_ACCOUNT)
+        assert result["type"] == "form"
+        assert result["step_id"] == SOURCE_ACCOUNT
+        # The user needs the authorize link to sign in with.
+        assert result["description_placeholders"]["authorize_url"] == _AUTHORIZE[0]
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"redirect_url": _REDIRECT_OK}
+        )
+
+    assert result["type"] == "create_entry"
+    assert result["title"] == "Swiss Post (me@example.ch)"
+    assert result["data"][CONF_SOURCE] == SOURCE_ACCOUNT
+    assert result["data"][CONF_ID_TOKEN] == "idt"
+    assert result["data"][CONF_REFRESH_TOKEN] == "rt"
+    # A per-entry device id is generated for the inbox's x-device-id header.
+    assert result["data"][CONF_DEVICE_ID]
+
+
+async def test_account_flow_rejects_a_redirect_without_a_code(hass):
+    """A pasted URL that carries no code must not be silently accepted."""
+    with patch(
+        "custom_components.swiss_post.config_flow.SwissPostAccountClient"
+        ".build_authorize_url",
+        return_value=_AUTHORIZE,
+    ):
+        result = await _pick_source(hass, SOURCE_ACCOUNT)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {"redirect_url": "https://app.post.ch/mainapp/auth/callback?state=STATE"},
+        )
+    assert result["type"] == "form"
+    assert result["errors"] == {"base": "invalid_redirect"}
+
+
+async def test_account_flow_rejects_a_mismatched_state(hass):
+    """A redirect from a different flow (wrong state) is refused."""
+    with patch(
+        "custom_components.swiss_post.config_flow.SwissPostAccountClient"
+        ".build_authorize_url",
+        return_value=_AUTHORIZE,
+    ):
+        result = await _pick_source(hass, SOURCE_ACCOUNT)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {
+                "redirect_url": "https://app.post.ch/mainapp/auth/callback"
+                "?code=THECODE&state=SOMETHINGELSE"
+            },
+        )
+    assert result["type"] == "form"
+    assert result["errors"] == {"base": "invalid_redirect"}
+
+
+async def test_account_options_menu_hides_the_parcel_page(hass):
+    """An account inbox discovers its own parcels, so there is nothing to edit."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="account:user-1",
+        data={CONF_SOURCE: SOURCE_ACCOUNT},
+        options={},
+    )
+    entry.add_to_hass(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] == "menu"
+    assert result["menu_options"] == ["settings"]
 
 
 def _hub(parcels: list[dict]) -> MockConfigEntry:
@@ -109,3 +316,171 @@ async def test_options_settings_preserve_parcel_list(hass):
     )
     assert result["type"] == "create_entry"
     assert result["data"][CONF_PARCELS] == parcels
+
+
+async def _start_reauth(hass, entry):
+    """Begin the reauth flow for ``entry``."""
+    return await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={
+            "source": "reauth",
+            "entry_id": entry.entry_id,
+            "unique_id": entry.unique_id,
+        },
+        data=dict(entry.data),
+    )
+
+
+def _account_entry(**data) -> MockConfigEntry:
+    return MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="account:user-1",
+        data={
+            CONF_SOURCE: SOURCE_ACCOUNT,
+            CONF_ACCOUNT_SUB: "user-1",
+            CONF_EMAIL: "me@example.ch",
+            CONF_ID_TOKEN: "old-idt",
+            CONF_REFRESH_TOKEN: "old-rt",
+            CONF_DEVICE_ID: "dev-1",
+            **data,
+        },
+    )
+
+
+async def test_reauth_replaces_only_the_tokens(hass):
+    """A renewed sign-in must keep the entry, swapping just the token pair."""
+    entry = _account_entry()
+    entry.add_to_hass(hass)
+    with (
+        patch(
+            "custom_components.swiss_post.config_flow.SwissPostAccountClient"
+            ".build_authorize_url",
+            return_value=_AUTHORIZE,
+        ),
+        patch(
+            "custom_components.swiss_post.config_flow.SwissPostAccountClient"
+            ".async_exchange_code",
+            new=AsyncMock(
+                return_value={
+                    "id_token": "new-idt",
+                    "refresh_token": "new-rt",
+                    "access_token": "new-at",
+                }
+            ),
+        ),
+        patch(
+            "custom_components.swiss_post.config_flow.decode_jwt_claims",
+            return_value={"sub": "user-1", "email": "me@example.ch"},
+        ),
+    ):
+        result = await _start_reauth(hass, entry)
+        assert result["type"] == "form"
+        assert result["step_id"] == "reauth_confirm"
+        # The form must carry both the fresh link and the how-to-find-it docs.
+        assert result["description_placeholders"]["authorize_url"] == _AUTHORIZE[0]
+        assert result["description_placeholders"]["docs_url"]
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"redirect_url": _REDIRECT_OK}
+        )
+        await hass.async_block_till_done()
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "reauth_successful"
+    assert entry.data[CONF_ID_TOKEN] == "new-idt"
+    assert entry.data[CONF_REFRESH_TOKEN] == "new-rt"
+    # The account identity is untouched.
+    assert entry.data[CONF_ACCOUNT_SUB] == "user-1"
+
+
+async def test_reauth_refuses_a_different_account(hass):
+    """Signing in as somebody else must not hijack the existing entry."""
+    entry = _account_entry()
+    entry.add_to_hass(hass)
+    with (
+        patch(
+            "custom_components.swiss_post.config_flow.SwissPostAccountClient"
+            ".build_authorize_url",
+            return_value=_AUTHORIZE,
+        ),
+        patch(
+            "custom_components.swiss_post.config_flow.SwissPostAccountClient"
+            ".async_exchange_code",
+            new=AsyncMock(
+                return_value={
+                    "id_token": "x",
+                    "refresh_token": "y",
+                    "access_token": "z",
+                }
+            ),
+        ),
+        patch(
+            "custom_components.swiss_post.config_flow.decode_jwt_claims",
+            return_value={"sub": "somebody-else"},
+        ),
+    ):
+        result = await _start_reauth(hass, entry)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"redirect_url": _REDIRECT_OK}
+        )
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "unique_id_mismatch"
+    assert entry.data[CONF_ID_TOKEN] == "old-idt"
+
+
+async def test_reauth_reports_a_rejected_sign_in(hass):
+    entry = _account_entry()
+    entry.add_to_hass(hass)
+    with (
+        patch(
+            "custom_components.swiss_post.config_flow.SwissPostAccountClient"
+            ".build_authorize_url",
+            return_value=_AUTHORIZE,
+        ),
+        patch(
+            "custom_components.swiss_post.config_flow.SwissPostAccountClient"
+            ".async_exchange_code",
+            new=AsyncMock(side_effect=SwissPostAccountInvalidAuth("no")),
+        ),
+    ):
+        result = await _start_reauth(hass, entry)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"redirect_url": _REDIRECT_OK}
+        )
+    assert result["type"] == "form"
+    assert result["errors"] == {"base": "invalid_auth"}
+
+
+async def test_account_flow_reports_a_connection_failure(hass):
+    with (
+        patch(
+            "custom_components.swiss_post.config_flow.SwissPostAccountClient"
+            ".build_authorize_url",
+            return_value=_AUTHORIZE,
+        ),
+        patch(
+            "custom_components.swiss_post.config_flow.SwissPostAccountClient"
+            ".async_exchange_code",
+            new=AsyncMock(side_effect=SwissPostAccountApiError("down")),
+        ),
+    ):
+        result = await _pick_source(hass, SOURCE_ACCOUNT)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"redirect_url": _REDIRECT_OK}
+        )
+    assert result["type"] == "form"
+    assert result["errors"] == {"base": "cannot_connect"}
+
+
+def test_parse_redirect_url_tolerates_messy_pasting():
+    """Users paste with whitespace and newlines; extra params are ignored."""
+    from custom_components.swiss_post.config_flow import _parse_redirect_url
+
+    code, state = _parse_redirect_url(
+        "  https://app.post.ch/mainapp/auth/callback"
+        "?code=ABC&iss=https%3A%2F%2Flogin.swissid.ch&state=ST&client_id=x\n"
+    )
+    assert (code, state) == ("ABC", "ST")
+    assert _parse_redirect_url("nonsense") == (None, None)
+    assert _parse_redirect_url("") == (None, None)

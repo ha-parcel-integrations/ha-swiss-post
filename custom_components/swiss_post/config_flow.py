@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 import re
+import uuid
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 import voluptuous as vol
 from homeassistant.config_entries import (
@@ -15,38 +17,51 @@ from homeassistant.config_entries import (
 )
 from homeassistant.core import callback
 from homeassistant.helpers import selector
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from .account.client import (
+    SwissPostAccountApiError,
+    SwissPostAccountClient,
+    SwissPostAccountInvalidAuth,
+    decode_jwt_claims,
+)
 from .const import (
+    CONF_ACCESS_TOKEN,
+    CONF_ACCOUNT_SUB,
     CONF_DELIVERED_FILTER_AMOUNT,
     CONF_DELIVERED_FILTER_TYPE,
+    CONF_DEVICE_ID,
+    CONF_EMAIL,
+    CONF_ID_TOKEN,
     CONF_INCLUDE_HISTORY,
     CONF_PARCELS,
+    CONF_REFRESH_TOKEN,
+    CONF_SOURCE,
     CONF_TRACKING_CODE,
     DEFAULT_DELIVERED_FILTER_AMOUNT,
     DEFAULT_DELIVERED_FILTER_TYPE,
     DEFAULT_INCLUDE_HISTORY,
     DOMAIN,
+    REDIRECT_URL_DOCS_URL,
+    SOURCE_ACCOUNT,
+    SOURCE_TRACKING,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-def normalize_tracking_code(value: str) -> str:
-    """Return the tracking code upper-cased with separators stripped.
+# The field the user pastes the browser redirect URL into. Named as in the DHL
+# Germany flow, the suite's other browser-paste OIDC carrier.
+CONF_REDIRECT_URL = "redirect_url"
+_REDIRECT_SCHEMA = vol.Schema({vol.Required(CONF_REDIRECT_URL): str})
 
-    Mirrors what a consumer site's own sanitiser does (uppercase, drop
-    everything that is not ``A-Z0-9``), so codes pasted with spaces or dashes
-    still work.
-    """
+
+def normalize_tracking_code(value: str) -> str:
+    """Return the tracking code upper-cased with separators stripped."""
     return re.sub(r"[^A-Z0-9]+", "", (value or "").upper())
 
 
 def valid_tracking_code(value: str) -> bool:
-    """Accept any non-empty code.
-
-    Swiss Post's real formats (domestic digit runs, international S10 codes)
-    vary too much to gate on client-side; an invalid code just comes back
-    "not found" from the API anyway.
-    """
+    """Accept any non-empty code; the API decides what is real."""
     return bool(value)
 
 
@@ -55,10 +70,34 @@ def _current_parcels(entry: ConfigEntry) -> list[dict[str, str]]:
     return [dict(item) for item in entry.options.get(CONF_PARCELS, [])]
 
 
+def _parse_redirect_url(value: str) -> tuple[str | None, str | None]:
+    """Pull ``code``/``state`` out of a pasted ``…/auth/callback?code=…`` URL.
+
+    Users paste messily — leading/trailing whitespace, a trailing newline — so
+    this strips first. Swiss Post adds its own ``iss`` and ``client_id`` params
+    to the redirect; they are simply ignored.
+    """
+    try:
+        query = parse_qs(urlparse(value.strip()).query)
+    except ValueError:
+        return None, None
+    code = query.get("code", [None])[0]
+    state = query.get("state", [None])[0]
+    return code, state
+
+
 class SwissPostConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle the UI-driven configuration flow for the Swiss Post integration."""
 
     VERSION = 1
+
+    def __init__(self) -> None:
+        """Hold the per-flow PKCE material across the account steps."""
+        self._verifier: str | None = None
+        self._state: str | None = None
+        self._authorize_url: str = ""
+        self._device_id: str | None = None
+        self._reauth_entry: ConfigEntry | None = None
 
     @staticmethod
     @callback
@@ -71,21 +110,31 @@ class SwissPostConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Create the Swiss Post hub — single instance, no input needed.
+        """Offer the two sources: the SwissID account inbox or tracking codes."""
+        return self.async_show_menu(
+            step_id="user", menu_options=[SOURCE_ACCOUNT, SOURCE_TRACKING]
+        )
 
-        Tracking is keyed on the tracking code alone (no account, no postal
-        code — the anonymous session the API needs is established behind the
-        scenes and is not something the user supplies), so there is nothing to
-        ask at setup: the entry is created straight away and parcels are added
-        afterwards via the options flow, the ``swiss_post.track_parcel``
-        service or a dashboard button. ``single_config_entry`` in the manifest
-        enforces one hub.
+    async def async_step_tracking(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Create the public tracking hub (single instance, no input needed).
+
+        Tracking is keyed on the tracking code alone — the anonymous session the
+        API needs is established behind the scenes — so there is nothing to ask:
+        the hub is created straight away and parcels are added afterwards via the
+        options flow, the ``swiss_post.track_parcel`` service or a button.
         """
+        # The unique_id stays ``DOMAIN`` and must not be "improved" to
+        # SOURCE_TRACKING: entries created before the account source existed
+        # carry ``DOMAIN``, and changing it here would stop
+        # _abort_if_unique_id_configured() recognising them — letting an
+        # existing install add a second tracking hub polling the same surface.
         await self.async_set_unique_id(DOMAIN)
         self._abort_if_unique_id_configured()
         return self.async_create_entry(
             title="Swiss Post",
-            data={},
+            data={CONF_SOURCE: SOURCE_TRACKING},
             options={
                 CONF_PARCELS: [],
                 CONF_DELIVERED_FILTER_TYPE: DEFAULT_DELIVERED_FILTER_TYPE,
@@ -94,23 +143,161 @@ class SwissPostConfigFlow(ConfigFlow, domain=DOMAIN):
             },
         )
 
+    async def _async_exchange(
+        self, redirect_url: str
+    ) -> tuple[str | None, dict[str, str] | None]:
+        """Parse + exchange a pasted redirect URL.
+
+        Returns ``(error_code, tokens)`` — exactly one of the two is set. The
+        ``state`` check is what makes a redirect from an unrelated sign-in
+        attempt fail instead of being silently accepted.
+        """
+        code, state = _parse_redirect_url(redirect_url)
+        if not code or state != self._state:
+            return "invalid_redirect", None
+        client = SwissPostAccountClient(
+            async_get_clientsession(self.hass), device_id=self._device_id
+        )
+        try:
+            return None, await client.async_exchange_code(code, self._verifier or "")
+        except SwissPostAccountInvalidAuth:
+            return "invalid_auth", None
+        except SwissPostAccountApiError:
+            _LOGGER.debug("Failed to exchange the pasted redirect URL", exc_info=True)
+            return "cannot_connect", None
+
+    def _async_authorize_form(
+        self, step_id: str, errors: dict[str, str], **placeholders: str
+    ) -> ConfigFlowResult:
+        """Show the authorize link plus the paste-back field.
+
+        The PKCE pair and ``state`` are minted **once per flow** and reused when
+        the form is re-rendered after an error. Minting new ones would change
+        the challenge behind the link the user already signed in with, so a
+        transient ``cannot_connect`` during the exchange would invalidate a code
+        that was never spent — forcing them to redo the whole browser login and
+        network-log capture for nothing. Reusing them lets the user simply paste
+        again.
+        """
+        if self._verifier is None:
+            self._authorize_url, self._verifier, self._state = (
+                SwissPostAccountClient.build_authorize_url()
+            )
+        authorize_url = self._authorize_url
+        if self._device_id is None:
+            self._device_id = str(uuid.uuid4())
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=_REDIRECT_SCHEMA,
+            description_placeholders={
+                "authorize_url": authorize_url,
+                "docs_url": REDIRECT_URL_DOCS_URL,
+                **placeholders,
+            },
+            errors=errors,
+        )
+
+    async def async_step_account(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Log in with SwissID via a pasted-back browser redirect.
+
+        The sign-in deliberately runs in the user's own browser: SwissID may ask
+        for a passkey, a fingerprint or an SMS code, and those only work on
+        SwissID's own pages. That keeps the integration from ever asking anyone
+        to weaken their account security.
+
+        The redirect address is meant to open the mobile app, so a desktop
+        browser bounces straight on to a Swiss Post app page — the user catches
+        the address in their browser's network log (see ``docs_url``).
+        """
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            error, tokens = await self._async_exchange(user_input[CONF_REDIRECT_URL])
+            if error is not None:
+                errors["base"] = error
+            else:
+                assert tokens is not None
+                claims = decode_jwt_claims(tokens["id_token"])
+                sub = str(claims.get("sub") or "")
+                email = claims.get("email")
+                await self.async_set_unique_id(f"account:{sub}")
+                self._abort_if_unique_id_configured()
+                return self.async_create_entry(
+                    title=f"Swiss Post ({email})" if email else "Swiss Post account",
+                    data={
+                        CONF_SOURCE: SOURCE_ACCOUNT,
+                        CONF_DEVICE_ID: self._device_id,
+                        CONF_ACCOUNT_SUB: sub,
+                        CONF_EMAIL: email,
+                        CONF_ID_TOKEN: tokens["id_token"],
+                        CONF_REFRESH_TOKEN: tokens["refresh_token"],
+                        CONF_ACCESS_TOKEN: tokens.get("access_token", ""),
+                    },
+                    options={
+                        CONF_DELIVERED_FILTER_TYPE: DEFAULT_DELIVERED_FILTER_TYPE,
+                        CONF_DELIVERED_FILTER_AMOUNT: DEFAULT_DELIVERED_FILTER_AMOUNT,
+                        CONF_INCLUDE_HISTORY: DEFAULT_INCLUDE_HISTORY,
+                    },
+                )
+
+        return self._async_authorize_form(SOURCE_ACCOUNT, errors)
+
+    async def async_step_reauth(
+        self, entry_data: dict[str, Any]
+    ) -> ConfigFlowResult:
+        """Start reauthentication for the account whose refresh chain died."""
+        self._reauth_entry = self._get_reauth_entry()
+        self._device_id = entry_data.get(CONF_DEVICE_ID) or str(uuid.uuid4())
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Re-run the browser login and replace only the stored tokens."""
+        errors: dict[str, str] = {}
+        entry = self._reauth_entry
+        assert entry is not None
+        if user_input is not None:
+            error, tokens = await self._async_exchange(user_input[CONF_REDIRECT_URL])
+            if error is not None:
+                errors["base"] = error
+            else:
+                assert tokens is not None
+                claims = decode_jwt_claims(tokens["id_token"])
+                # Never let a reauth silently move the entry to another account.
+                await self.async_set_unique_id(f"account:{claims.get('sub') or ''}")
+                self._abort_if_unique_id_mismatch()
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data_updates={
+                        CONF_ID_TOKEN: tokens["id_token"],
+                        CONF_REFRESH_TOKEN: tokens["refresh_token"],
+                        CONF_ACCESS_TOKEN: tokens.get("access_token", ""),
+                        CONF_DEVICE_ID: self._device_id,
+                    },
+                )
+
+        return self._async_authorize_form(
+            "reauth_confirm", errors, email=entry.data.get(CONF_EMAIL) or ""
+        )
+
 
 class SwissPostOptionsFlowHandler(OptionsFlow):
-    """Manage tracked parcels, history and polling in one sectioned form.
+    """Manage tracked parcels and integration settings.
 
-    Mirrors the other suite carriers' section layout (here: ``parcels`` /
-    ``delivered`` / ``history`` / ``polling``). Changes apply live via HA's
-    options-update listener (which refreshes the coordinator), so new/removed
-    per-parcel sensors appear and disappear immediately.
+    The ``parcels`` page is only offered for a tracking hub — an account inbox
+    discovers its own parcels, so it has nothing to edit there.
     """
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Offer parcel management separately from integration settings."""
-        return self.async_show_menu(
-            step_id="init", menu_options=["parcels", "settings"]
-        )
+        menu_options = ["settings"]
+        if self.config_entry.data.get(CONF_SOURCE, SOURCE_TRACKING) == SOURCE_TRACKING:
+            menu_options.insert(0, "parcels")
+        return self.async_show_menu(step_id="init", menu_options=menu_options)
 
     async def async_step_parcels(
         self, user_input: dict[str, Any] | None = None

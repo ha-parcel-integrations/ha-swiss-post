@@ -137,3 +137,59 @@ DEFAULT_INCLUDE_HISTORY = False
 # Cap each parcel's history to the most recent N events so the attribute stays
 # well under HA's ~16 KB state-attribute limit.
 HISTORY_MAX_EVENTS = 20
+
+# --- Source selection --------------------------------------------------------
+# This integration has two independently-configured transports: the public
+# tracking codes (surfaces A + B above) and the SwissID account inbox below.
+# Existing entries predate CONF_SOURCE and are treated as tracking hubs.
+CONF_SOURCE = "source"
+SOURCE_TRACKING = "tracking"
+SOURCE_ACCOUNT = "account"
+
+# --- Account source: the SwissID-authenticated app backend (mobserv) ---------
+# The logged-in user's parcel inbox, discovered automatically — no tracking
+# codes. Reached with a SwissID OAuth token, same backend the Post app uses.
+#
+# OIDC is a standard Authorization-Code + PKCE flow against a **public** client
+# (no secret). These values are transport material recovered from the official
+# app, not user credentials: never surface them in UI, diagnostics or logs.
+OIDC_AUTHORIZE_URL = "https://login.swissid.ch/idp/oauth2/authorize"
+OIDC_TOKEN_URL = "https://login.swissid.ch/idp/oauth2/access_token"
+OIDC_CLIENT_ID = "swisspost_main_prod"
+OIDC_REDIRECT_URI = "https://app.post.ch/mainapp/auth/callback"
+OIDC_SCOPE = "openid profile email address phone"
+
+# The inbox endpoint. The bearer it accepts is the JWT **id_token**, not the
+# opaque access_token (the access_token is rejected as "Malformed token"); any
+# UUID works as the device id.
+ACCOUNT_OVERVIEW_URL = "https://app.post.ch/mobserv/v1/mailpiece/tracking/overview"
+
+# Refresh the id_token this many seconds before it actually expires, so a poll
+# never races the expiry. The id_token lives 3600 s; the refresh_token rotates
+# on every refresh and must be persisted back to the entry each time.
+ACCOUNT_TOKEN_REFRESH_MARGIN_SECONDS = 120
+
+# Config-entry keys for the account source. The device id is a per-entry random
+# UUID (any value is accepted); the tokens rotate and are persisted on refresh.
+CONF_ACCESS_TOKEN = "access_token"
+CONF_ID_TOKEN = "id_token"
+CONF_REFRESH_TOKEN = "refresh_token"
+CONF_DEVICE_ID = "device_id"
+CONF_ACCOUNT_SUB = "account_sub"
+# The account holder's email (from the id_token), used only to name the device
+# and the config entry. Redacted from diagnostics.
+CONF_EMAIL = "email"
+
+# Human-facing deep link for an account parcel (no postcode needed; the search
+# page resolves a bare tracking number).
+ACCOUNT_TRACKING_URL = "https://service.post.ch/ekp-web/ui/entry/search/{tracking_code}"
+
+# The redirect URI is meant to open the mobile app, so in a desktop browser it
+# bounces straight on to a Swiss Post page advertising the app — the address
+# carrying the code is never visible in the address bar and has to be caught in
+# the browser's network log. These per-browser instructions are linked from the
+# sign-in form, mirroring the DHL Germany flow.
+REDIRECT_URL_DOCS_URL = (
+    "https://github.com/ha-parcel-integrations/ha-swiss-post/blob/main/docs/"
+    "finding-the-redirect-url.md"
+)

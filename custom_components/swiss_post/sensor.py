@@ -18,10 +18,10 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import SwissPostConfigEntry
-from .const import DOMAIN
-from .coordinator import SwissPostCoordinator
+from .const import CONF_SOURCE, DOMAIN, SOURCE_ACCOUNT
 from .device import ATTRIBUTION, build_device_info
 from .parcels import parse_iso
+from .tracking.coordinator import SwissPostCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,6 +29,23 @@ _LOGGER = logging.getLogger(__name__)
 # update throttling adds nothing here.
 PARALLEL_UPDATES = 0
 
+
+def _bucket(coordinator: Any, name: str) -> list[dict]:
+    """Read one parcel bucket, working across both coordinator shapes.
+
+    The account coordinator publishes a four-way dict
+    (incoming/outgoing × active/delivered); the tracking coordinator publishes
+    a plain active list plus a ``delivered`` attribute. This hides the
+    difference from the entities.
+    """
+    data = coordinator.data or []
+    if isinstance(data, dict):
+        return data.get(name, [])
+    if name == "incoming_active":
+        return data
+    if name == "incoming_delivered":
+        return getattr(coordinator, "delivered", [])
+    return []
 
 
 async def async_setup_entry(
@@ -43,7 +60,7 @@ async def async_setup_entry(
     coordinator = entry.runtime_data.coordinator
 
     current_barcodes: set[str] = {
-        p.get("barcode", "") for p in coordinator.data or []
+        p.get("barcode", "") for p in _bucket(coordinator, "incoming_active")
     }
     entry_id = entry.entry_id
 
@@ -56,6 +73,8 @@ async def async_setup_entry(
         f"{entry_id}_incoming_parcels",
         f"{entry_id}_next_delivery",
         f"{entry_id}_delivered_parcels",
+        f"{entry_id}_outgoing_parcels",
+        f"{entry_id}_outgoing_delivered_parcels",
         f"{entry_id}_last_update",
     }
     for entity_entry in er.async_entries_for_config_entry(registry, entry_id):
@@ -73,12 +92,15 @@ async def async_setup_entry(
             coordinator, entry, async_add_entities, current_barcodes
         ),
     ]
-    for parcel in coordinator.data or []:
+    for parcel in _bucket(coordinator, "incoming_active"):
         entities.append(
             SwissPostParcelSensor(coordinator, entry, parcel.get("barcode", ""))
         )
     entities.append(SwissPostNextDeliverySensor(coordinator, entry))
     entities.append(SwissPostDeliveredParcelsSensor(coordinator, entry))
+    if entry.data.get(CONF_SOURCE) == SOURCE_ACCOUNT:
+        entities.append(SwissPostOutgoingParcelsSensor(coordinator, entry))
+        entities.append(SwissPostOutgoingDeliveredParcelsSensor(coordinator, entry))
     entities.append(SwissPostLastUpdateSensor(coordinator, entry))
 
     async_add_entities(entities)
@@ -118,16 +140,16 @@ class SwissPostIncomingParcelsSensor(
     @property
     def native_value(self) -> int:
         """Return the native value of the sensor."""
-        return len(self.coordinator.data or [])
+        return len(_bucket(self.coordinator, "incoming_active"))
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the extra state attributes."""
-        return {"parcels": self.coordinator.data or []}
+        return {"parcels": _bucket(self.coordinator, "incoming_active")}
 
     def _handle_coordinator_update(self) -> None:
         current_barcodes: set[str] = {
-            p.get("barcode", "") for p in (self.coordinator.data or [])
+            p.get("barcode", "") for p in _bucket(self.coordinator, "incoming_active")
         }
 
         new_barcodes = current_barcodes - self._known_barcodes
@@ -171,7 +193,7 @@ class SwissPostParcelSensor(CoordinatorEntity[SwissPostCoordinator], SensorEntit
         self._attr_device_info = build_device_info(entry)
 
     def _get_parcel(self) -> dict[str, Any] | None:
-        for parcel in self.coordinator.data or []:
+        for parcel in _bucket(self.coordinator, "incoming_active"):
             if parcel.get("barcode") == self._barcode:
                 return parcel
         return None
@@ -209,7 +231,7 @@ class SwissPostNextDeliverySensor(
 
     def _delivery_moments(self) -> list[tuple[datetime, dict]]:
         result: list[tuple[datetime, dict]] = []
-        for parcel in self.coordinator.data or []:
+        for parcel in _bucket(self.coordinator, "incoming_active"):
             moment = parse_iso(parcel.get("planned_from"))
             if moment is None:
                 if parcel.get("planned_from"):
@@ -262,12 +284,64 @@ class SwissPostDeliveredParcelsSensor(
     @property
     def native_value(self) -> int:
         """Return the native value of the sensor."""
-        return len(self.coordinator.delivered)
+        return len(_bucket(self.coordinator, "incoming_delivered"))
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the extra state attributes."""
-        return {"parcels": self.coordinator.delivered}
+        return {"parcels": _bucket(self.coordinator, "incoming_delivered")}
+
+
+class SwissPostOutgoingParcelsSensor(CoordinatorEntity, SensorEntity):
+    """Summary sensor for active outgoing account parcels (account source only)."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "outgoing_parcels"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_attribution = ATTRIBUTION
+    _unrecorded_attributes = frozenset({"parcels"})
+
+    def __init__(self, coordinator, entry: ConfigEntry) -> None:
+        """Initialise the account-only outgoing summary."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_outgoing_parcels"
+        self._attr_device_info = build_device_info(entry)
+
+    @property
+    def native_value(self) -> int:
+        """Return the number of active sender parcels."""
+        return len(_bucket(self.coordinator, "outgoing_active"))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return active sender parcels."""
+        return {"parcels": _bucket(self.coordinator, "outgoing_active")}
+
+
+class SwissPostOutgoingDeliveredParcelsSensor(CoordinatorEntity, SensorEntity):
+    """Summary sensor for delivered outgoing account parcels (account source only)."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "outgoing_delivered_parcels"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_attribution = ATTRIBUTION
+    _unrecorded_attributes = frozenset({"parcels"})
+
+    def __init__(self, coordinator, entry: ConfigEntry) -> None:
+        """Initialise the delivered sender summary."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_outgoing_delivered_parcels"
+        self._attr_device_info = build_device_info(entry)
+
+    @property
+    def native_value(self) -> int:
+        """Return the number of retained delivered sender parcels."""
+        return len(_bucket(self.coordinator, "outgoing_delivered"))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return delivered sender parcels."""
+        return {"parcels": _bucket(self.coordinator, "outgoing_delivered")}
 
 
 class SwissPostLastUpdateSensor(

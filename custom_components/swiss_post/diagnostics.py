@@ -55,6 +55,24 @@ TO_REDACT = {
     "userIdentifier",
     "csrfToken",
     "NPKlpipSession",
+    # account source: OAuth tokens and the device id are credentials — leaking
+    # any of them lets a reader act as the user's account.
+    "access_token",
+    "id_token",
+    "refresh_token",
+    "device_id",
+    "account_sub",
+    "email",
+    "Authorization",
+    # account payload (mobserv overview) — identity and address
+    "mailpieceId",
+    "mailpieceKey",
+    "deliveryAddress",
+    "houseNumber",
+    "zip4",
+    "collectionCode",
+    "pickupOffice",
+    "summaryDescription",
 }
 
 
@@ -63,8 +81,20 @@ async def async_get_config_entry_diagnostics(
 ) -> dict[str, Any]:
     """Return diagnostics for the Swiss Post config entry."""
     coordinator = entry.runtime_data.coordinator
+    data = coordinator.data or []
+    if isinstance(data, dict):
+        incoming_active = data.get("incoming_active", [])
+        incoming_delivered = data.get("incoming_delivered", [])
+        outgoing_active = data.get("outgoing_active", [])
+        outgoing_delivered = data.get("outgoing_delivered", [])
+    else:
+        incoming_active = data
+        incoming_delivered = getattr(coordinator, "delivered", [])
+        outgoing_active = []
+        outgoing_delivered = []
 
     return {
+        "entry_data": async_redact_data(dict(entry.data), TO_REDACT),
         "entry_options": async_redact_data(dict(entry.options), TO_REDACT),
         "polling": {
             "current_tier_minutes": coordinator.current_tier_minutes,
@@ -73,12 +103,17 @@ async def async_get_config_entry_diagnostics(
                 if coordinator.update_interval
                 else None
             ),
+            "suspended": coordinator.update_interval is None,
         },
         "counts": {
-            "incoming_active": len(coordinator.data or []),
-            "delivered": len(coordinator.delivered or []),
+            "incoming_active": len(incoming_active),
+            "delivered": len(incoming_delivered),
+            "outgoing_active": len(outgoing_active),
+            "outgoing_delivered": len(outgoing_delivered),
             "skipped_from_fetch": len(coordinator.delivered_codes),
         },
-        "incoming": async_redact_data(coordinator.data or [], TO_REDACT),
-        "delivered": async_redact_data(coordinator.delivered or [], TO_REDACT),
+        "incoming": async_redact_data(incoming_active, TO_REDACT),
+        "delivered": async_redact_data(incoming_delivered, TO_REDACT),
+        "outgoing": async_redact_data(outgoing_active, TO_REDACT),
+        "delivered_outgoing": async_redact_data(outgoing_delivered, TO_REDACT),
     }

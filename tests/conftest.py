@@ -20,10 +20,13 @@ def reset_one_shot_warnings():
     makes them leak across tests, so whether a warning fires would otherwise
     depend on test order.
     """
-    from custom_components.swiss_post import api, parcels
+    from custom_components.swiss_post import parcels
+    from custom_components.swiss_post.tracking import api
 
     api._empty_result_logged.clear()
-    parcels._unmapped_statuses_logged.clear()
+    api._history_204_logged.clear()
+    api._history_null_data_logged.clear()
+    parcels._warned_once.clear()
     yield
 
 

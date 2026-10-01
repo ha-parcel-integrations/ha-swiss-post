@@ -4,49 +4,45 @@
     "step": {
       "user": {
         "title": "Swiss Post einrichten",
+        "menu_options": {
+          "account": "SwissID-Konto (automatischer Import)",
+          "tracking": "Sendungsnummern"
+        }
+      },
+      "tracking": {
+        "title": "Sendungsnummern einrichten",
         "description": "Die Sendungsverfolgung von Swiss Post benötigt weder ein Konto noch eine Postleitzahl – der Hub wird sofort erstellt. Füge Pakete anschließend über die Integrationsoptionen oder den Dienst `swiss_post.track_parcel` hinzu."
+      },
+      "account": {
+        "title": "Mit SwissID anmelden",
+        "description": "Öffnen Sie diesen Link in einem Browser und melden Sie sich mit SwissID an: {authorize_url}\n\nDie letzte Weiterleitung von SwissID soll die Swiss Post-App öffnen, deshalb springt Ihr Browser direkt weiter auf eine Seite, die diese App bewirbt — die Anmeldung sieht also erfolgreich aus, aber die Adresse mit dem Code bleibt nicht in der Adressleiste. Sie fangen sie im Tab „Netzwerk“ der Entwicklertools Ihres Browsers ab — siehe die [Schritt-für-Schritt-Anleitung]({docs_url}). Fügen Sie die vollständige Adresse unten ein.",
+        "data": {
+          "redirect_url": "Redirect-URL"
+        }
+      },
+      "reauth_confirm": {
+        "title": "SwissID-Anmeldung abgelaufen",
+        "description": "Swiss Post akzeptiert die gespeicherte Anmeldung für {email} nicht mehr. Öffnen Sie diesen Link, melden Sie sich erneut an und fügen Sie dann die Redirect-URL ein, die Sie im Tab „Netzwerk“ der Entwicklertools abfangen (siehe die [Schritt-für-Schritt-Anleitung]({docs_url})): {authorize_url}",
+        "data": {
+          "redirect_url": "Redirect-URL"
+        }
       }
     },
     "abort": {
-      "already_configured": "Swiss Post ist bereits eingerichtet."
+      "already_configured": "Diese Swiss Post-Quelle ist bereits eingerichtet.",
+      "reauth_successful": "Swiss Post wurde erfolgreich neu angemeldet.",
+      "unique_id_mismatch": "Diese Anmeldung gehört zu einem anderen SwissID-Konto. Melden Sie sich mit dem Konto an, für das dieser Eintrag eingerichtet wurde."
+    },
+    "error": {
+      "invalid_redirect": "Das sieht nicht nach der Swiss Post-Redirect-URL aus — stellen Sie sicher, dass Sie die vollständige Adresse kopiert haben, einschliesslich alles nach `?code=`.",
+      "invalid_auth": "SwissID hat diese Anmeldung abgelehnt. Der Code ist einmalig und nur kurz gültig — melden Sie sich erneut an und kopieren Sie die neue Adresse.",
+      "cannot_connect": "SwissID ist nicht erreichbar. Bitte erneut versuchen."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Swiss Post-Optionen",
-        "sections": {
-          "parcels": {
-            "name": "Pakete",
-            "data": {
-              "add": "Paket hinzufügen",
-              "remove": "Pakete entfernen"
-            },
-            "data_description": {
-              "add": "Gib einen Swiss Post-Sendungscode ein, um die Verfolgung zu starten. Du findest ihn auf der Versandbestätigung oder der Abholkarte."
-            }
-          },
-          "delivered": {
-            "name": "Zugestellte Pakete",
-            "data": {
-              "delivered_filter_type": "Filtern nach",
-              "delivered_filter_amount": "Anzahl"
-            },
-            "data_description": {
-              "delivered_filter_type": "Zeige zugestellte Pakete der letzten X Tage oder beschränke die Anzeige auf die X neuesten.",
-              "delivered_filter_amount": "Anzahl der anzuzeigenden Tage oder Pakete."
-            }
-          },
-          "history": {
-            "name": "Paketverlauf",
-            "data": {
-              "include_history": "Statusverlauf einschließen"
-            },
-            "data_description": {
-              "include_history": "Fügt jedem Paket ein Attribut mit dem Verlauf aller Statusaktualisierungen hinzu (Zeitstempel, Status, Originaltext). Standardmäßig deaktiviert."
-            }
-          }
-        },
         "menu_options": {
           "parcels": "Pakete",
           "settings": "Einstellungen"
@@ -107,7 +103,9 @@
       "parcel_registered": "Ein Paket wurde registriert",
       "parcel_status_changed": "Der Status eines Pakets hat sich geändert",
       "parcel_delivered": "Ein Paket wurde zugestellt",
-      "parcel_delivery_time_changed": "Die voraussichtliche Zustellzeit eines Pakets hat sich geändert"
+      "parcel_delivery_time_changed": "Die voraussichtliche Zustellzeit eines Pakets hat sich geändert",
+      "outgoing_parcel_status_changed": "Status eines ausgehenden Pakets hat sich geändert",
+      "outgoing_parcel_delivered": "Ein ausgehendes Paket wurde zugestellt"
     }
   },
   "entity": {
@@ -138,6 +136,14 @@
       },
       "parcel": {
         "name": "Paket {barcode}"
+      },
+      "outgoing_parcels": {
+        "name": "Ausgehende Pakete",
+        "unit_of_measurement": "Pakete"
+      },
+      "outgoing_delivered_parcels": {
+        "name": "Ausgehende zugestellte Pakete",
+        "unit_of_measurement": "Pakete"
       }
     }
   }

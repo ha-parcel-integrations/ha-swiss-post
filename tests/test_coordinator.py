@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.swiss_post.api import SwissPostApiError
 from custom_components.swiss_post.const import (
     CONF_DELIVERED_FILTER_AMOUNT,
     CONF_DELIVERED_FILTER_TYPE,
@@ -21,7 +20,8 @@ from custom_components.swiss_post.const import (
     STAGGER_MINUTES,
     ParcelStatus,
 )
-from custom_components.swiss_post.coordinator import (
+from custom_components.swiss_post.tracking.api import SwissPostApiError
+from custom_components.swiss_post.tracking.coordinator import (
     SwissPostCoordinator,
     _hottest_tier_minutes,
     _in_quiet_window,

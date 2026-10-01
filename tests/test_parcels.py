@@ -20,13 +20,15 @@ from custom_components.swiss_post.const import (
 )
 from custom_components.swiss_post.parcels import (
     apply_delivered_filter,
-    build_history,
     format_dimensions,
-    map_parcel_status,
-    normalize_parcel,
     parse_iso,
     sort_parcels_by_ts,
     to_iso_timestamp,
+)
+from custom_components.swiss_post.tracking.parcels import (
+    build_history,
+    map_parcel_status,
+    normalize_parcel,
 )
 
 from .payloads import (
@@ -44,8 +46,7 @@ from .payloads import (
 @pytest.fixture(autouse=True)
 def _reset_one_shot_logs():
     """Clear the module's one-shot log state between tests."""
-    parcels_module._unmapped_statuses_logged.clear()
-    parcels_module._reported_once.clear()
+    parcels_module._warned_once.clear()
     yield
 
 
@@ -229,11 +230,32 @@ def test_normalize_converts_weight_and_dimensions_to_the_canonical_units():
     }
 
 
-def test_normalize_warns_once_that_the_dimension_order_is_assumed(caplog):
-    normalize_parcel(delivered_sample())
-    normalize_parcel(delivered_sample())
-    assert caplog.text.count("length, width, height") == 1
-    assert "issues/new" in caplog.text
+def test_normalize_sorts_the_dimensions_regardless_of_payload_order():
+    """``dimension1/2/3`` carry no axis semantics — Swiss Post's own frontend
+    sorts them before labelling, so the payload order must not be trusted.
+
+    Every permutation of the same three measurements must therefore produce the
+    same canonical dimensions: largest → length, middle → width, smallest →
+    height.
+    """
+    expected = {
+        "length": 40.0,
+        "width": 25.0,
+        "height": 15.5,
+        "text": "40 x 25 x 15 cm",
+    }
+    for permutation in ((400, 250, 155), (155, 400, 250), (250, 155, 400)):
+        raw = delivered_sample()
+        raw["physicalProperties"] = dict(
+            zip(("dimension1", "dimension2", "dimension3"), permutation)
+        )
+        assert normalize_parcel(raw)["dimensions"] == expected
+
+
+def test_normalize_needs_all_three_dimensions():
+    raw = delivered_sample()
+    raw["physicalProperties"] = {"dimension1": 400, "dimension2": 250}
+    assert normalize_parcel(raw)["dimensions"] is None
 
 
 def test_normalize_survives_a_payload_without_physical_properties():

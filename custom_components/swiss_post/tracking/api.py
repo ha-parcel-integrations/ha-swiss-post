@@ -25,7 +25,7 @@ from typing import Any
 
 import aiohttp
 
-from .const import (
+from ..const import (
     BROWSER_USER_AGENT,
     CSRF_HEADER,
     EKP_HISTORY_ITEM_URL,

@@ -11,8 +11,8 @@ import aiohttp
 import pytest
 from multidict import CIMultiDict
 
-from custom_components.swiss_post import api as api_module
-from custom_components.swiss_post.api import (
+from custom_components.swiss_post.tracking import api as api_module
+from custom_components.swiss_post.tracking.api import (
     SwissPostApiClient,
     SwissPostApiError,
     SwissPostSession,

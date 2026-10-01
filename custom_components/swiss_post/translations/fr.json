@@ -4,49 +4,45 @@
     "step": {
       "user": {
         "title": "Configurer Swiss Post",
+        "menu_options": {
+          "account": "Compte SwissID (import automatique)",
+          "tracking": "Numéros de suivi"
+        }
+      },
+      "tracking": {
+        "title": "Configurer les numéros de suivi",
         "description": "Le suivi Swiss Post ne nécessite ni compte ni code postal : le hub est créé immédiatement. Ajoutez des colis ensuite via les options de l'intégration ou le service `swiss_post.track_parcel`."
+      },
+      "account": {
+        "title": "Se connecter avec SwissID",
+        "description": "Ouvrez ce lien dans un navigateur et connectez-vous avec SwissID : {authorize_url}\n\nLa redirection finale de SwissID est censée ouvrir l'application Swiss Post ; votre navigateur rebondit donc directement vers une page qui fait la promotion de cette application — la connexion semble avoir réussi, mais l'adresse contenant le code ne reste pas dans la barre d'adresse. Vous la récupérez dans l'onglet « Réseau » des outils de développement de votre navigateur — voir les [instructions pas à pas]({docs_url}). Collez l'adresse complète ci-dessous.",
+        "data": {
+          "redirect_url": "URL de redirection"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Connexion SwissID expirée",
+        "description": "Swiss Post n'accepte plus la connexion enregistrée pour {email}. Ouvrez ce lien, reconnectez-vous, puis collez l'URL de redirection récupérée dans l'onglet « Réseau » des outils de développement (voir les [instructions pas à pas]({docs_url})) : {authorize_url}",
+        "data": {
+          "redirect_url": "URL de redirection"
+        }
       }
     },
     "abort": {
-      "already_configured": "Swiss Post est déjà configuré."
+      "already_configured": "Cette source Swiss Post est déjà configurée.",
+      "reauth_successful": "Swiss Post a été reconnecté avec succès.",
+      "unique_id_mismatch": "Cette connexion concerne un autre compte SwissID. Connectez-vous avec le compte pour lequel cette entrée a été configurée."
+    },
+    "error": {
+      "invalid_redirect": "Cela ne ressemble pas à l'URL de redirection Swiss Post — vérifiez que vous avez copié l'adresse complète, y compris tout ce qui suit `?code=`.",
+      "invalid_auth": "SwissID a refusé cette connexion. Le code est à usage unique et de courte durée : reconnectez-vous et copiez la nouvelle adresse.",
+      "cannot_connect": "Impossible de joindre SwissID. Veuillez réessayer."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Options Swiss Post",
-        "sections": {
-          "parcels": {
-            "name": "Colis",
-            "data": {
-              "add": "Ajouter un colis",
-              "remove": "Supprimer des colis"
-            },
-            "data_description": {
-              "add": "Saisissez un code de suivi Swiss Post pour commencer à le suivre. Vous le trouverez sur la confirmation d'expédition ou l'avis de passage."
-            }
-          },
-          "delivered": {
-            "name": "Colis livrés",
-            "data": {
-              "delivered_filter_type": "Filtrer par",
-              "delivered_filter_amount": "Quantité"
-            },
-            "data_description": {
-              "delivered_filter_type": "Affichez les colis livrés des X derniers jours, ou limitez l'affichage aux X plus récents.",
-              "delivered_filter_amount": "Nombre de jours ou de colis à afficher."
-            }
-          },
-          "history": {
-            "name": "Historique des colis",
-            "data": {
-              "include_history": "Inclure l'historique des statuts"
-            },
-            "data_description": {
-              "include_history": "Ajoute à chaque colis un attribut d'historique répertoriant chaque mise à jour de statut (horodatage, statut, texte d'origine). Désactivé par défaut."
-            }
-          }
-        },
         "menu_options": {
           "parcels": "Colis",
           "settings": "Paramètres"
@@ -107,7 +103,9 @@
       "parcel_registered": "Un colis a été enregistré",
       "parcel_status_changed": "Le statut d'un colis a changé",
       "parcel_delivered": "Un colis a été livré",
-      "parcel_delivery_time_changed": "L'heure de livraison prévue d'un colis a changé"
+      "parcel_delivery_time_changed": "L'heure de livraison prévue d'un colis a changé",
+      "outgoing_parcel_status_changed": "Le statut d'un colis sortant a changé",
+      "outgoing_parcel_delivered": "Un colis sortant a été livré"
     }
   },
   "entity": {
@@ -138,6 +136,14 @@
       },
       "parcel": {
         "name": "Colis {barcode}"
+      },
+      "outgoing_parcels": {
+        "name": "Colis sortants",
+        "unit_of_measurement": "colis"
+      },
+      "outgoing_delivered_parcels": {
+        "name": "Colis sortants livrés",
+        "unit_of_measurement": "colis"
       }
     }
   }

@@ -174,3 +174,81 @@ def pickup_sample(code: str = ACTIVE_CODE) -> dict:
         }
     )
     return sample
+
+
+# ---------------------------------------------------------------------------
+# Account inbox (mobserv overview) samples
+#
+# Field names and the status vocabulary come from the 9.6.0 APK's
+# ``MailpieceTrackingOverviewElement`` / ``MailpieceStatusType`` models, so these
+# mirror the real wire shape rather than a guess. Person/address fields are
+# blanked per the suite's privacy rule.
+# ---------------------------------------------------------------------------
+
+ACCOUNT_IN_ID = "990011112222333344"
+ACCOUNT_OUT_ID = "990055556666777788"
+ACCOUNT_LETTER_ID = "990099998888777766"
+
+
+def account_element(
+    mailpiece_id: str = ACCOUNT_IN_ID,
+    *,
+    status: str = "ON_GOING_DELIVERY",
+    complete: bool = False,
+    mailpiece_type: str = "PARCEL",
+    outgoing: bool = False,
+    pickup_office: str | None = None,
+    timestamp: int | None = 1776328109000,
+) -> dict:
+    """One ``MailpieceTrackingOverviewElement`` as the inbox returns it."""
+    return {
+        "mailpieceId": mailpiece_id,
+        "mailpieceKey": "opaque-detail-key",
+        "mailpieceType": mailpiece_type,
+        "productName": "Parcel",
+        "mailpieceStatusType": status,
+        "statusTimestamp": timestamp,
+        "statusEndTimestamp": None,
+        "signatureRequired": False,
+        "summaryDescription": "99.00.111122.22333344",
+        "demoMode": "OFF",
+        "isComplete": complete,
+        "deliveryAddress": {
+            "location": {"latitude": 46.94, "longitude": 7.44},
+            "locationName": None,
+            "address": "",
+            "addressDetail": {
+                "name1": None,
+                "name2": None,
+                "name3": None,
+                "street": None,
+                "houseNumber": None,
+                "city": "Bern",
+                "zip4": "3011",
+                "country": "CH",
+            },
+            "addressType": "OTHER",
+            "pickupOffice": pickup_office,
+            "collectionCode": None,
+            "postboxDeliveryStatus": "NOT_POSSIBLE",
+        },
+        "displayDeliveryAddress": True,
+        "liveTrackingInfo": None,
+        "hasOpenImportPayment": False,
+        "openBillingItem": None,
+        "isDeletable": False,
+        "userIsAddressee": not outgoing,
+        "userIsSender": outgoing,
+        "proofOfDeliveryImageAvailable": False,
+    }
+
+
+def overview_response(
+    in_progress: list | None = None, completed: list | None = None
+) -> dict:
+    """A ``MailpieceTrackingOverview`` envelope."""
+    return {
+        "inProgress": in_progress if in_progress is not None else [],
+        "completed": completed if completed is not None else [],
+        "standaloneTaxCards": [],
+    }

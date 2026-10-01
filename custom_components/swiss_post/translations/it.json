@@ -4,49 +4,45 @@
     "step": {
       "user": {
         "title": "Configura Swiss Post",
+        "menu_options": {
+          "account": "Account SwissID (importazione automatica)",
+          "tracking": "Codici di tracciamento"
+        }
+      },
+      "tracking": {
+        "title": "Configura i codici di tracciamento",
         "description": "Il tracciamento Swiss Post non richiede né account né codice postale: l'hub viene creato subito. Aggiungi i pacchi in seguito tramite le opzioni dell'integrazione o il servizio `swiss_post.track_parcel`."
+      },
+      "account": {
+        "title": "Accedi con SwissID",
+        "description": "Apri questo link in un browser e accedi con SwissID: {authorize_url}\n\nIl reindirizzamento finale di SwissID serve ad aprire l'app Swiss Post, quindi il browser rimbalza subito su una pagina che pubblicizza quell'app — l'accesso sembra riuscito, ma l'indirizzo con il codice non resta nella barra degli indirizzi. Lo recuperi nella scheda «Rete» degli strumenti per sviluppatori del browser — vedi le [istruzioni passo per passo]({docs_url}). Incolla l'indirizzo completo qui sotto.",
+        "data": {
+          "redirect_url": "URL di reindirizzamento"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Accesso SwissID scaduto",
+        "description": "Swiss Post non accetta più l'accesso salvato per {email}. Apri questo link, accedi di nuovo e incolla l'URL di reindirizzamento che recuperi nella scheda «Rete» degli strumenti per sviluppatori (vedi le [istruzioni passo per passo]({docs_url})): {authorize_url}",
+        "data": {
+          "redirect_url": "URL di reindirizzamento"
+        }
       }
     },
     "abort": {
-      "already_configured": "Swiss Post è già configurato."
+      "already_configured": "Questa sorgente Swiss Post è già configurata.",
+      "reauth_successful": "Swiss Post è stato riautenticato correttamente.",
+      "unique_id_mismatch": "Quell'accesso è per un altro account SwissID. Accedi con l'account per cui è stata configurata questa voce."
+    },
+    "error": {
+      "invalid_redirect": "Non sembra l'URL di reindirizzamento di Swiss Post — assicurati di aver copiato l'indirizzo completo, compreso tutto ciò che segue `?code=`.",
+      "invalid_auth": "SwissID ha rifiutato questo accesso. Il codice è monouso e di breve durata: accedi di nuovo e copia il nuovo indirizzo.",
+      "cannot_connect": "Impossibile raggiungere SwissID. Riprova."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Opzioni Swiss Post",
-        "sections": {
-          "parcels": {
-            "name": "Pacchi",
-            "data": {
-              "add": "Aggiungi un pacco",
-              "remove": "Rimuovi pacchi"
-            },
-            "data_description": {
-              "add": "Inserisci un codice di tracciamento Swiss Post per iniziare a seguirlo. Lo trovi sulla conferma di spedizione o sull'avviso di giacenza."
-            }
-          },
-          "delivered": {
-            "name": "Pacchi consegnati",
-            "data": {
-              "delivered_filter_type": "Filtra per",
-              "delivered_filter_amount": "Quantità"
-            },
-            "data_description": {
-              "delivered_filter_type": "Mostra i pacchi consegnati negli ultimi X giorni, oppure limita ai X più recenti.",
-              "delivered_filter_amount": "Numero di giorni o pacchi da mostrare."
-            }
-          },
-          "history": {
-            "name": "Cronologia pacchi",
-            "data": {
-              "include_history": "Includi cronologia degli stati"
-            },
-            "data_description": {
-              "include_history": "Aggiunge a ogni pacco un attributo di cronologia con ogni aggiornamento di stato (data e ora, stato, testo originale). Disattivato per impostazione predefinita."
-            }
-          }
-        },
         "menu_options": {
           "parcels": "Pacchi",
           "settings": "Impostazioni"
@@ -107,7 +103,9 @@
       "parcel_registered": "Un pacco è stato registrato",
       "parcel_status_changed": "Lo stato di un pacco è cambiato",
       "parcel_delivered": "Un pacco è stato consegnato",
-      "parcel_delivery_time_changed": "L'orario di consegna previsto di un pacco è cambiato"
+      "parcel_delivery_time_changed": "L'orario di consegna previsto di un pacco è cambiato",
+      "outgoing_parcel_status_changed": "Lo stato di un pacco in uscita è cambiato",
+      "outgoing_parcel_delivered": "Un pacco in uscita è stato consegnato"
     }
   },
   "entity": {
@@ -138,6 +136,14 @@
       },
       "parcel": {
         "name": "Pacco {barcode}"
+      },
+      "outgoing_parcels": {
+        "name": "Pacchi in uscita",
+        "unit_of_measurement": "pacchi"
+      },
+      "outgoing_delivered_parcels": {
+        "name": "Pacchi in uscita consegnati",
+        "unit_of_measurement": "pacchi"
       }
     }
   }

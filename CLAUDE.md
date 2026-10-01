@@ -45,20 +45,23 @@ vocabulary, the traps) live in `carrier-research/swiss-post/api/` in the private
 research repo — **not** here and not in a local `docs/api/`. What follows is
 integration-side only.
 
-**No `awaiting_pickup` sensor yet — pending a confirmed status token, not a
-structural exemption.** Swiss Post does have a pickup-point concept
-(`deliveryPostOfficeZip`/`avis`/`displayedAvisCode`) and `parcels.py` already
-derives a `pickup: bool` from it, but no `globalStatus` value has been
-confirmed to map to `ParcelStatus.AT_PICKUP_POINT` yet (pre-1.0 gap, one-shot
-WARNING in place, see "Pre-1.0 unknowns" below). Add the sensor the moment
-that token is confirmed — this is not the same as a locker-less carrier's
-structural exemption (`.github/CONVENTIONS.md`'s pickup-point convention).
+**No `awaiting_pickup` sensor yet — pending a status token seen on the wire,
+not a structural exemption.** Swiss Post does have a pickup-point concept and
+both normalisers derive a `pickup: bool`. On the public surface no
+`globalStatus` value has been confirmed to map to
+`ParcelStatus.AT_PICKUP_POINT` (pickup is inferred from
+`deliveryPostOfficeZip`/`avis`/`displayedAvisCode` instead, one-shot WARNING in
+place). The **account** surface does have the token — `WAITING_FOR_PICKUP`, read
+from the app's own enum — and even names the office (`deliveryAddress.pickupOffice`),
+but it has not been seen on a real parcel yet. Add the sensor once one shows up;
+this is not the same as a locker-less carrier's structural exemption
+(`.github/CONVENTIONS.md`'s pickup-point convention).
 
 **Two hosts, each with half the data.** `service.post.ch/ekp-web` has status,
 ETA, weight, dimensions and the delivery booleans but its `events` array is
 always empty; `eosapi.postlogistics.ch` has the event timeline and no usable
-status vocabulary. `api.py` merges the second into the first's `events` key, so
-`parcels.py` only ever sees one payload shape.
+status vocabulary. `tracking/api.py` merges the second into the first's `events` key, so
+`tracking/parcels.py` only ever sees one payload shape.
 
 **The history option controls the call count, not just an attribute.** Two
 requests per parcel per poll with history off, three with it on. That is why
@@ -83,7 +86,7 @@ integration can silently rot:
 turns into the cached payload or a pending placeholder, so a parcel never
 silently disappears or flips to delivered.
 
-**Deliberate `None`s in `normalize_parcel`:** `sender` (the payload has a
+**Deliberate `None`s in `tracking/parcels.normalize_parcel`:** `sender` (the payload has a
 `sender` field but it has never been populated; `senderCountry` is a country,
 not a sender) and `pickup_point` on anything but a pickup parcel (Swiss Post
 gives the office's postcode, never its name).
@@ -95,12 +98,74 @@ near-constant (`PST` on almost everything, including the delivery itself) and
 mapping it would mis-file delivered parcels, so history entries keep
 `status: null` on purpose.
 
+**`dimension1/2/3` carry no axis semantics — sort them.** Swiss Post's own
+tracking frontend does
+`[d1, d2, d3].map(v => v / 10).sort((a, b) => a - b)` before labelling anything,
+so the payload order is meaningless. `tracking/parcels._dimensions_cm()` sorts
+too and labels largest → length, middle → width, smallest → height (the suite's
+usual `length >= width`; Swiss Post's own frontend calls the largest *width*).
+The old "we assume length, width, height" WARNING is gone — this is derived, not
+guessed. Do not "simplify" the sort away.
+
 **Pre-1.0 unknowns**, each with a one-shot WARNING and an issue link
-(`parcels.py`): no pickup-point `globalStatus` token is known (pickup is
-inferred from `deliveryPostOfficeZip` / `avis` instead), `deliveryRange` /
-`deliveryTimeWindow` have never been seen populated, and the
-`dimension1/2/3` → length/width/height order is assumed. The warnings log field
-*names*, never values — a pickup point or a delivery window is location data.
+(`tracking/parcels.py`): no pickup-point `globalStatus` token is known on the
+public surface (pickup is inferred from `deliveryPostOfficeZip` / `avis`
+instead), and `deliveryRange` / `deliveryTimeWindow` have never been seen
+populated. The warnings log field *names*, never values — a pickup point or a
+delivery window is location data.
+
+## Two sources: `tracking/` and `account/`
+
+The repo follows the suite's multi-source layout (as `ha-bpost` does). The
+domain root holds only dispatch and the shared presentation layer; each source
+package owns its client, coordinator and normaliser:
+
+- `tracking/` — the public keyless surfaces (above). Entries created before the
+  split carry no `CONF_SOURCE` and are treated as tracking hubs, so no options
+  migration was needed.
+- `account/` — the SwissID-authenticated app backend (`mobserv`). Discovers the
+  logged-in user's parcels; no tracking codes.
+
+`parcels.py` in the root holds only **source-agnostic** pure helpers
+(`parse_iso`, `epoch_ms_to_iso`, `format_dimensions`, `sort_parcels_by_ts`,
+`apply_delivered_filter`, `warn_once`) and `events.py` holds the one bus-event
+contract both coordinators fire, so the two sources cannot drift apart on either.
+
+**`single_config_entry` was deliberately removed** from the manifest: an account
+hub and a tracking hub must be able to coexist.
+
+**The two coordinators publish different shapes, on purpose.** Tracking returns
+a plain active list plus a `delivered` attribute; the account inbox returns a
+four-way dict (`incoming_active` / `incoming_delivered` / `outgoing_active` /
+`outgoing_delivered`). `sensor._bucket()` hides that from the entities — read
+buckets through it, never `coordinator.data` directly.
+
+### Account-source traps
+
+- **The bearer is the JWT `id_token`, not the opaque `access_token`.** The inbox
+  rejects the access token as `"Malformed token"`. It also wants any
+  `x-device-id` UUID (generated once per entry).
+- **The `refresh_token` rotates on every refresh.** `__init__.py` persists the
+  new pair to the config entry via a token callback — drop that and the chain is
+  lost on the next restart.
+- **A dead chain must raise `ConfigEntryAuthFailed` from inside
+  `_async_update_data`.** It is the only exception `DataUpdateCoordinator` turns
+  into HA's reauth flow; re-raising our own error gets swallowed into
+  `ConfigEntryNotReady` and the entry retries a dead chain forever.
+- **Letters are excluded** (`mailpieceType == "LETTER"`). Swiss Post has no
+  envelope-scan feature like PostNL's, so a letter is just a thinner parcel —
+  deliberately filtered rather than surfaced. An unknown type is kept.
+- **The overview is a summary**: no weight, dimensions, ETA window or event
+  timeline, so those stay `None` on an account parcel. They live on a per-parcel
+  `detail` call (keyed on `mailpieceKey`), which is a known, documented next step
+  rather than a gap.
+- **The login is browser paste-back, and that is a feature.** SwissID registers
+  one redirect URI, built to open the mobile app, so it bounces to a Post app
+  page and the code never stays in the address bar — users copy it from the
+  network log (`docs/finding-the-redirect-url.md`, mirroring DHL DE). Replicating
+  SwissID's *native* `api-login` journey was considered and rejected: it only
+  works at `qoa1` (password), so anyone with a passkey or enforced 2FA would have
+  to weaken their account security. Do not reintroduce it.
 
 ## Divergences from the scaffold
 

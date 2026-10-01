@@ -100,3 +100,95 @@ def test_last_update_sensor():
     coordinator.last_success_time = moment
     sensor = SwissPostLastUpdateSensor(coordinator, _entry())
     assert sensor.native_value == moment
+
+
+# ---------------------------------------------------------------------------
+# Account source: the coordinator publishes a four-way dict instead of a list,
+# and two extra sender-side sensors exist.
+# ---------------------------------------------------------------------------
+
+
+def _account_coordinator(**buckets) -> MagicMock:
+    coordinator = MagicMock()
+    coordinator.data = {
+        "incoming_active": [],
+        "incoming_delivered": [],
+        "outgoing_active": [],
+        "outgoing_delivered": [],
+        **buckets,
+    }
+    return coordinator
+
+
+def test_bucket_reads_both_coordinator_shapes():
+    """The entities must not care which source they are attached to."""
+    from custom_components.swiss_post.sensor import _bucket
+
+    tracking = _coordinator([_parcel("A")], delivered=[_parcel("B")])
+    assert [p["barcode"] for p in _bucket(tracking, "incoming_active")] == ["A"]
+    assert [p["barcode"] for p in _bucket(tracking, "incoming_delivered")] == ["B"]
+    # A tracking hub has no sender side at all.
+    assert _bucket(tracking, "outgoing_active") == []
+
+    account = _account_coordinator(outgoing_active=[_parcel("C")])
+    assert [p["barcode"] for p in _bucket(account, "outgoing_active")] == ["C"]
+    assert _bucket(account, "incoming_active") == []
+
+
+def test_incoming_sensor_reads_the_account_dict():
+    coordinator = _account_coordinator(incoming_active=[_parcel("A"), _parcel("B")])
+    sensor = SwissPostIncomingParcelsSensor(coordinator, _entry(), lambda _: None, set())
+    assert sensor.native_value == 2
+
+
+def test_outgoing_sensors_count_sender_parcels():
+    from custom_components.swiss_post.sensor import (
+        SwissPostOutgoingDeliveredParcelsSensor,
+        SwissPostOutgoingParcelsSensor,
+    )
+
+    coordinator = _account_coordinator(
+        outgoing_active=[_parcel("A")],
+        outgoing_delivered=[_parcel("B"), _parcel("C")],
+    )
+    active = SwissPostOutgoingParcelsSensor(coordinator, _entry())
+    done = SwissPostOutgoingDeliveredParcelsSensor(coordinator, _entry())
+    assert active.native_value == 1
+    assert [p["barcode"] for p in active.extra_state_attributes["parcels"]] == ["A"]
+    assert done.native_value == 2
+    assert len(done.extra_state_attributes["parcels"]) == 2
+
+
+def test_delivered_sensor_reads_the_account_dict():
+    coordinator = _account_coordinator(incoming_delivered=[_parcel("A")])
+    sensor = SwissPostDeliveredParcelsSensor(coordinator, _entry())
+    assert sensor.native_value == 1
+
+
+def test_every_sensor_has_an_icon_and_a_consistent_unit():
+    """Guard the two things a new sensor is easy to forget.
+
+    A missing ``icons.json`` entry leaves the sensor with HA's generic fallback
+    icon, and a unit copied from English leaves a Dutch dashboard reading
+    "pakketten" on one tile and "parcels" on the next.
+    """
+    import json
+    from pathlib import Path
+
+    root = Path("custom_components/swiss_post")
+    icons = json.loads((root / "icons.json").read_text())["entity"]["sensor"]
+    strings = json.loads((root / "strings.json").read_text())["entity"]["sensor"]
+
+    # Every translated sensor needs an icon.
+    assert set(strings) - set(icons) == set()
+
+    for path in sorted((root / "translations").glob("*.json")):
+        sensors = json.loads(path.read_text())["entity"]["sensor"]
+        # Same sensor set as strings.json, so no language misses one.
+        assert set(sensors) == set(strings), path.name
+        units = {
+            value["unit_of_measurement"]
+            for value in sensors.values()
+            if "unit_of_measurement" in value
+        }
+        assert len(units) == 1, f"{path.name} mixes units: {units}"

@@ -7,7 +7,12 @@
 
 > 💬 Questions or feedback? Join the discussion on the [Home Assistant community](https://community.home-assistant.io/t/packages-postnl-dhl-nl-dpd-and-gls-parcel-integration/112433/).
 
-A custom Home Assistant integration that tracks your [Swiss Post](https://www.post.ch) parcels in Switzerland. No account and no API key are needed — you enter the tracking code yourself, just like on the Swiss Post website.
+A custom Home Assistant integration that tracks your [Swiss Post](https://www.post.ch) parcels in Switzerland. No API key is needed. Pick either of two sources at setup:
+
+- **Tracking codes** — you enter each tracking code yourself, just like on the Swiss Post website. No account at all.
+- **SwissID account** — sign in once and your parcels are imported automatically, incoming and outgoing, the same way the official Post app sees them.
+
+You can run both side by side (one hub each) if you want codes for parcels that aren't linked to your account.
 
 > **Parcels from abroad.** Cross-border parcels are customs-cleared and often handed over by a foreign carrier, so Swiss Post only sees them from the moment they enter its network. Such a parcel can stay `unknown` for a while and then appear mid-journey — that is Swiss Post's view of it, not a fault in the integration.
 
@@ -36,22 +41,36 @@ Part of the [ha-parcel-integrations](https://ha-parcel-integrations.github.io/) 
 
 ## Features
 
-- Track any number of Swiss Post parcels by tracking code — no account needed
+- Two sources: track any number of parcels **by tracking code** (no account), or sign in with **SwissID** and have your parcels imported automatically
 - Per-parcel sensor with the canonical status (`registered` / `in_transit` / `out_for_delivery` / `delivered` / …), the carrier's own status text, the expected delivery window and a tracking deep-link
-- Summary sensors: incoming parcels, next delivery, recently delivered parcels
+- Summary sensors: incoming parcels, next delivery, recently delivered parcels — plus outgoing and outgoing-delivered on an account hub
 - Read-only **Deliveries** calendar with the expected delivery windows
 - `swiss_post.track_parcel` / `swiss_post.untrack_parcel` services, so a dashboard button can add a parcel
-- Events + device triggers for no-code automations (parcel registered, status changed, delivered, delivery time changed)
+- Events + device triggers for no-code automations (parcel registered, status changed, delivered, delivery time changed, and the outgoing equivalents)
 - Opt-in per-parcel status history
 - Manual refresh button and a diagnostic last-update sensor
 
 ## Requirements
+
+For the **tracking-code** source:
 
 - A Swiss Post parcel and its tracking code (from the shipping
   confirmation email or the missed-delivery card) — no account needed
 - Tracking codes come in two shapes, both accepted: the 18-digit domestic
   number (printed as `99.00 1234.5678 9012 34`) and the international form
   `RR123456789CH`
+
+For the **SwissID account** source:
+
+- A SwissID account with your parcels linked to it (the same account you use in
+  the Post app)
+- A desktop browser to complete the sign-in once. Swiss Post's final redirect is
+  built to open its mobile app, so the address Home Assistant needs never stays
+  in the address bar — you copy it out of the browser's network log. See
+  [finding the redirect URL](docs/finding-the-redirect-url.md).
+- Whatever sign-in factors you already use (password, passkey, fingerprint, SMS
+  code) keep working — the sign-in happens on SwissID's own pages, so you never
+  have to weaken your account security for this integration
 
 ## Installation
 
@@ -67,9 +86,23 @@ Copy `custom_components/swiss_post` into your `config/custom_components/` folder
 
 ## Configuration
 
-Add the integration via **Settings → Devices & Services → Add Integration → Swiss Post**. There is nothing to fill in: the hub is created immediately (Swiss Post tracking needs no account).
+Add the integration via **Settings → Devices & Services → Add Integration → Swiss Post**, then pick a source.
+
+### Tracking codes
+
+There is nothing to fill in: the hub is created immediately (this source needs no account).
 
 Then add parcels via the integration's **Configure** dialog, the [`swiss_post.track_parcel`](#services) service, or a [dashboard button](examples/dashboards/add_parcel_card.yaml). The tracking code is on your shipping confirmation email or the missed-delivery card.
+
+### SwissID account
+
+1. The form shows a sign-in link. Open it in a desktop browser and sign in with SwissID. If SwissID offers to create a passkey you can decline it.
+2. Your browser will bounce on to a Swiss Post page advertising the mobile app. That is expected — the sign-in worked, but the address carrying the code is already gone from the address bar.
+3. Copy that address out of your browser's developer tools' **Network** tab and paste it into the form. Step-by-step, per browser: [finding the redirect URL](docs/finding-the-redirect-url.md).
+
+Parcels are then imported automatically — nothing to add by hand. Home Assistant keeps the session alive on its own; if it ever expires you get a normal "re-authenticate" prompt.
+
+> **Why the copy-paste?** Swiss Post registers only one redirect address, and it is built to open its own mobile app. Doing the sign-in in your own browser is also what lets your existing passkey, fingerprint or SMS code keep working — this integration never asks you to turn a security feature off.
 
 ## Options
 
@@ -77,7 +110,7 @@ Open **Configure** on the integration entry:
 
 | Section | Option | Default | Description |
 |---|---|---|---|
-| Parcels | Add / remove | — | Manage the tracked tracking codes. Changes apply immediately, no restart. |
+| Parcels | Add / remove | — | Manage the tracked tracking codes. Changes apply immediately, no restart. **Tracking-code hubs only** — an account hub discovers its own parcels. |
 | Delivered parcels | Filter by / amount | last 7 days | How long delivered parcels stay visible on the delivered sensor. |
 | Parcel history | Include status history | off | Adds a `history` attribute per parcel with each status update. Swiss Post serves the timeline from a second endpoint, so this costs one extra request per parcel per poll. |
 
@@ -116,6 +149,8 @@ Standard HA removal applies: **Settings → Devices & Services → Swiss Post �
 | `sensor.swiss_post_parcel_<code>` | One per tracked parcel; state is the canonical status, attributes carry the full normalised parcel |
 | `sensor.swiss_post_next_delivery` | Earliest expected delivery moment across all active parcels |
 | `sensor.swiss_post_delivered_parcels` | Recently delivered parcels (see the retention option) |
+| `sensor.swiss_post_outgoing_parcels` | **Account hubs only:** parcels you sent that are still on their way |
+| `sensor.swiss_post_outgoing_delivered_parcels` | **Account hubs only:** parcels you sent that have arrived (same retention option) |
 | `sensor.swiss_post_last_successful_update` | Diagnostic: when Swiss Post was last polled successfully |
 
 A delivered parcel moves from its per-parcel sensor to the delivered sensor automatically.
@@ -158,8 +193,12 @@ The integration fires these on the event bus (also available as device triggers 
 | `swiss_post_parcel_status_changed` | A parcel's canonical status changes (`old_status` / `new_status` in the payload), except the final hop to delivered |
 | `swiss_post_parcel_delivered` | A parcel is delivered |
 | `swiss_post_parcel_delivery_time_changed` | The expected delivery window changes |
+| `swiss_post_outgoing_parcel_status_changed` | **Account hubs only:** a parcel you sent changes status |
+| `swiss_post_outgoing_parcel_delivered` | **Account hubs only:** a parcel you sent is delivered |
 
 Every payload is the full normalised parcel plus the hub's `device_id`. Events are suppressed on the first refresh after start-up.
+
+Outgoing parcels deliberately get a smaller event set: a parcel you sent yourself is not news when it first appears, and its delivery window is the recipient's business.
 
 ## Services
 
@@ -191,7 +230,7 @@ logger:
 
 - **A parcel shows `unknown`** — Swiss Post has not scanned it yet (their API returns nothing at all until the first scan), the parcel is still with a foreign carrier, or the code is wrong. It fills in automatically once Swiss Post picks it up.
 - **"Swiss Post has no data for tracking code …"** — the same thing, said in the log. The parcel stays tracked; nothing needs doing unless the code is a typo.
-- **A status logs "Unrecognised Swiss Post status"**, or any of the other warnings asking you to report something — please [open an issue](https://github.com/ha-parcel-integrations/ha-swiss-post/issues/new) with the logged line. This integration is still below 1.0: the status list, the delivery-window fields and the parcel-dimension order were all confirmed against a single real parcel, and every gap is deliberately noisy so it gets fixed.
+- **A status logs "Unrecognised Swiss Post status"**, or any of the other warnings asking you to report something — please [open an issue](https://github.com/ha-parcel-integrations/ha-swiss-post/issues/new) with the logged line. This integration is still below 1.0: the status list and the delivery-window fields were confirmed against a small number of real parcels, and every gap is deliberately noisy so it gets fixed.
 
 ## Related integrations
 

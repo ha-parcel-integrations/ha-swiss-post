@@ -10,7 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 
-from .const import DOMAIN
+from .const import CONF_EMAIL, CONF_SOURCE, DOMAIN, SOURCE_ACCOUNT
 
 CONFIGURATION_URL = "https://service.post.ch/ekp-web/ui/"
 
@@ -18,10 +18,16 @@ ATTRIBUTION = "Data provided by Swiss Post"
 
 
 def build_device_info(entry: ConfigEntry) -> DeviceInfo:
-    """Return the DeviceInfo shared by every entity of this hub."""
+    """Return the DeviceInfo shared by every entity of this hub.
+
+    An account hub is named after its email so a tracking hub and one or more
+    account hubs stay distinguishable in the device list.
+    """
+    is_account = entry.data.get(CONF_SOURCE) == SOURCE_ACCOUNT
+    email = entry.data.get(CONF_EMAIL)
     return DeviceInfo(
         identifiers={(DOMAIN, entry.entry_id)},
-        name="Swiss Post",
+        name=f"Swiss Post ({email})" if is_account and email else "Swiss Post",
         manufacturer="Swiss Post",
         entry_type=DeviceEntryType.SERVICE,
         configuration_url=CONFIGURATION_URL,

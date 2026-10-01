@@ -4,49 +4,45 @@
     "step": {
       "user": {
         "title": "Set up Swiss Post",
-        "description": "Swiss Post tracking needs no account or postal code — the hub is created right away. Add parcels afterwards via the integration options or the `swiss_post.track_parcel` service."
+        "menu_options": {
+          "account": "SwissID account (automatic import)",
+          "tracking": "Tracking codes"
+        }
+      },
+      "tracking": {
+        "title": "Set up tracking codes",
+        "description": "Swiss Post tracking needs no account — the hub is created right away. Add parcels afterwards via the integration options or the `swiss_post.track_parcel` service."
+      },
+      "account": {
+        "title": "Sign in with SwissID",
+        "description": "Open this link in a browser and sign in with SwissID: {authorize_url}\n\nSwissID's final redirect is meant to open the Swiss Post mobile app, so your browser will bounce straight on to a page advertising that app — the sign-in looks like it worked, but the address containing the code never stays in the address bar. You catch it in your browser's developer tools' Network tab instead — see [step-by-step instructions]({docs_url}). Paste the full address below.",
+        "data": {
+          "redirect_url": "Redirect URL"
+        }
+      },
+      "reauth_confirm": {
+        "title": "SwissID sign-in expired",
+        "description": "Swiss Post no longer accepts the stored sign-in for {email}. Open this link, sign in again, then paste the redirect URL you catch in your browser's developer tools' Network tab (see [step-by-step instructions]({docs_url})): {authorize_url}",
+        "data": {
+          "redirect_url": "Redirect URL"
+        }
       }
     },
+    "error": {
+      "invalid_redirect": "That does not look like the Swiss Post redirect URL — make sure you copied the full address, including everything after `?code=`.",
+      "invalid_auth": "SwissID rejected this sign-in. The code is single-use and short-lived, so sign in again and copy the new address.",
+      "cannot_connect": "Could not reach SwissID. Please try again."
+    },
     "abort": {
-      "already_configured": "Swiss Post is already set up."
+      "already_configured": "This Swiss Post source is already set up.",
+      "reauth_successful": "Swiss Post was signed in again successfully.",
+      "unique_id_mismatch": "That sign-in is for a different SwissID account. Sign in with the account this entry was set up for."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Swiss Post options",
-        "sections": {
-          "parcels": {
-            "name": "Parcels",
-            "data": {
-              "add": "Add a parcel",
-              "remove": "Remove parcels"
-            },
-            "data_description": {
-              "add": "Enter a Swiss Post tracking code to start tracking it. You find it on the shipping confirmation or the missed-delivery card."
-            }
-          },
-          "delivered": {
-            "name": "Delivered parcels",
-            "data": {
-              "delivered_filter_type": "Filter by",
-              "delivered_filter_amount": "Amount"
-            },
-            "data_description": {
-              "delivered_filter_type": "Show delivered parcels from the last X days, or limit to the X most recent.",
-              "delivered_filter_amount": "Number of days or parcels to show."
-            }
-          },
-          "history": {
-            "name": "Parcel history",
-            "data": {
-              "include_history": "Include status history"
-            },
-            "data_description": {
-              "include_history": "Add a per-parcel history attribute listing each status update (timestamp, status, original text). Off by default."
-            }
-          }
-        },
         "menu_options": {
           "parcels": "Parcels",
           "settings": "Settings"
@@ -107,7 +103,9 @@
       "parcel_registered": "A parcel was registered",
       "parcel_status_changed": "A parcel's status changed",
       "parcel_delivered": "A parcel was delivered",
-      "parcel_delivery_time_changed": "A parcel's expected delivery time changed"
+      "parcel_delivery_time_changed": "A parcel's expected delivery time changed",
+      "outgoing_parcel_status_changed": "An outgoing parcel's status changed",
+      "outgoing_parcel_delivered": "An outgoing parcel was delivered"
     }
   },
   "entity": {
@@ -131,6 +129,14 @@
       },
       "delivered_parcels": {
         "name": "Delivered parcels",
+        "unit_of_measurement": "parcels"
+      },
+      "outgoing_parcels": {
+        "name": "Outgoing parcels",
+        "unit_of_measurement": "parcels"
+      },
+      "outgoing_delivered_parcels": {
+        "name": "Outgoing delivered parcels",
         "unit_of_measurement": "parcels"
       },
       "last_update": {

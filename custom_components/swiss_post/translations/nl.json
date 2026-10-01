@@ -4,49 +4,45 @@
     "step": {
       "user": {
         "title": "Swiss Post instellen",
+        "menu_options": {
+          "account": "SwissID-account (automatisch importeren)",
+          "tracking": "Trackingcodes"
+        }
+      },
+      "tracking": {
+        "title": "Trackingcodes instellen",
         "description": "Swiss Post-tracking heeft geen account of postcode nodig — de hub wordt direct aangemaakt. Pakketten voeg je daarna toe via de integratie-opties of de service `swiss_post.track_parcel`."
+      },
+      "account": {
+        "title": "Inloggen met SwissID",
+        "description": "Open deze link in een browser en log in met SwissID: {authorize_url}\n\nDe laatste redirect van SwissID is bedoeld om de Swiss Post-app te openen, dus je browser stuitert direct door naar een pagina die die app aanprijst — het lijkt dus gelukt, maar het adres met de code blijft niet in de adresbalk staan. Je vist hem uit het Network-tabblad van de ontwikkelaarstools van je browser — zie de [stap-voor-stap-instructies]({docs_url}). Plak het volledige adres hieronder.",
+        "data": {
+          "redirect_url": "Redirect-URL"
+        }
+      },
+      "reauth_confirm": {
+        "title": "SwissID-login verlopen",
+        "description": "Swiss Post accepteert de opgeslagen login voor {email} niet meer. Open deze link, log opnieuw in en plak daarna de redirect-URL die je uit het Network-tabblad van de ontwikkelaarstools vist (zie de [stap-voor-stap-instructies]({docs_url})): {authorize_url}",
+        "data": {
+          "redirect_url": "Redirect-URL"
+        }
       }
     },
     "abort": {
-      "already_configured": "Swiss Post is al ingesteld."
+      "already_configured": "Deze Swiss Post-bron is al ingesteld.",
+      "reauth_successful": "Swiss Post is opnieuw ingelogd.",
+      "unique_id_mismatch": "Die login is voor een ander SwissID-account. Log in met het account waarvoor dit is ingesteld."
+    },
+    "error": {
+      "invalid_redirect": "Dat lijkt niet op de Swiss Post redirect-URL — zorg dat je het volledige adres hebt gekopieerd, inclusief alles na `?code=`.",
+      "invalid_auth": "SwissID heeft deze login geweigerd. De code is eenmalig en kort geldig, dus log opnieuw in en kopieer het nieuwe adres.",
+      "cannot_connect": "Kan SwissID niet bereiken. Probeer het opnieuw."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Swiss Post-opties",
-        "sections": {
-          "parcels": {
-            "name": "Pakketten",
-            "data": {
-              "add": "Pakket toevoegen",
-              "remove": "Pakketten verwijderen"
-            },
-            "data_description": {
-              "add": "Voer een Swiss Post-trackingcode in om het pakket te volgen. Je vindt de code op de verzendbevestiging of het niet-thuiskaartje."
-            }
-          },
-          "delivered": {
-            "name": "Bezorgde pakketten",
-            "data": {
-              "delivered_filter_type": "Filteren op",
-              "delivered_filter_amount": "Aantal"
-            },
-            "data_description": {
-              "delivered_filter_type": "Toon bezorgde pakketten van de laatste X dagen, of beperk tot de X meest recente.",
-              "delivered_filter_amount": "Aantal dagen of pakketten om te tonen."
-            }
-          },
-          "history": {
-            "name": "Pakketgeschiedenis",
-            "data": {
-              "include_history": "Statusgeschiedenis toevoegen"
-            },
-            "data_description": {
-              "include_history": "Voegt per pakket een geschiedenisattribuut toe met elke statusupdate (tijdstip, status, oorspronkelijke tekst). Standaard uit."
-            }
-          }
-        },
         "menu_options": {
           "parcels": "Pakketten",
           "settings": "Instellingen"
@@ -107,7 +103,9 @@
       "parcel_registered": "Een pakket is geregistreerd",
       "parcel_status_changed": "De status van een pakket is gewijzigd",
       "parcel_delivered": "Een pakket is bezorgd",
-      "parcel_delivery_time_changed": "De verwachte bezorgtijd van een pakket is gewijzigd"
+      "parcel_delivery_time_changed": "De verwachte bezorgtijd van een pakket is gewijzigd",
+      "outgoing_parcel_status_changed": "De status van een uitgaand pakket is gewijzigd",
+      "outgoing_parcel_delivered": "Een uitgaand pakket is bezorgd"
     }
   },
   "entity": {
@@ -138,6 +136,14 @@
       },
       "parcel": {
         "name": "Pakket {barcode}"
+      },
+      "outgoing_parcels": {
+        "name": "Uitgaande pakketten",
+        "unit_of_measurement": "pakketten"
+      },
+      "outgoing_delivered_parcels": {
+        "name": "Bezorgde uitgaande pakketten",
+        "unit_of_measurement": "pakketten"
       }
     }
   }

@@ -12,7 +12,13 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 
 from .config_flow import normalize_tracking_code, valid_tracking_code
-from .const import CONF_PARCELS, CONF_TRACKING_CODE, DOMAIN
+from .const import (
+    CONF_PARCELS,
+    CONF_SOURCE,
+    CONF_TRACKING_CODE,
+    DOMAIN,
+    SOURCE_TRACKING,
+)
 
 SERVICE_TRACK_PARCEL = "track_parcel"
 SERVICE_UNTRACK_PARCEL = "untrack_parcel"
@@ -22,10 +28,24 @@ _UNTRACK_SCHEMA = vol.Schema({vol.Required(CONF_TRACKING_CODE): cv.string})
 
 
 def _resolve_entry(hass: HomeAssistant):
-    """Return the single Swiss Post hub, or raise when it is not set up."""
-    entries = hass.config_entries.async_entries(DOMAIN)
+    """Return the tracking-code hub, or raise when there is none.
+
+    Must filter on the source: these services write tracking codes into
+    ``CONF_PARCELS``, which only the tracking coordinator reads. An account hub
+    discovers its own parcels, so writing a code into *its* options would be
+    silently ignored — and since an account entry can be created first, picking
+    "the first entry" is not good enough.
+    """
+    entries = [
+        entry
+        for entry in hass.config_entries.async_entries(DOMAIN)
+        if entry.data.get(CONF_SOURCE, SOURCE_TRACKING) == SOURCE_TRACKING
+    ]
     if not entries:
-        raise ServiceValidationError("Swiss Post is not set up")
+        raise ServiceValidationError(
+            "Swiss Post tracking-code hub is not set up — these services add "
+            "codes by hand, which a SwissID account hub does not use"
+        )
     return entries[0]
 
 
