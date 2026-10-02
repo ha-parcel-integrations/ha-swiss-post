@@ -244,7 +244,11 @@ def normalize_account_parcel(
     barcode = raw.get("mailpieceId")
     raw_status = raw.get("mailpieceStatusType")
     status = map_account_status(str(raw_status) if raw_status is not None else None)
-    delivered = bool(raw.get("isComplete")) or status is ParcelStatus.DELIVERED
+    # **Not** ``isComplete``: that means "this parcel is finished", and it is
+    # true on a returned parcel as well — which would file a parcel that came
+    # back to the sender as delivered. The status enum is the only field that
+    # distinguishes the two.
+    delivered = status is ParcelStatus.DELIVERED
     pickup = not delivered and status is ParcelStatus.AT_PICKUP_POINT
 
     # The only ETA candidate in the whole model, and it has never been seen

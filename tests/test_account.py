@@ -166,13 +166,21 @@ def test_normalize_account_parcel_marks_a_completed_parcel_delivered():
     assert parcel["pickup"] is False
 
 
-def test_normalize_account_parcel_uses_is_complete_over_the_status():
-    """``isComplete`` is explicit, so it survives an unmapped status token."""
+def test_normalize_account_parcel_does_not_call_a_returned_parcel_delivered():
+    """``isComplete`` means "finished", and a returned parcel is finished too."""
+    parcel = normalize_account_parcel(account_element(status="RETURNED", complete=True))
+    assert parcel["status"] is ParcelStatus.RETURNING
+    assert parcel["delivered"] is False
+    assert parcel["delivered_at"] is None
+
+
+def test_normalize_account_parcel_leaves_an_unmapped_complete_parcel_undelivered():
+    """Only the status enum separates delivered from returned, so it decides."""
     parcel = normalize_account_parcel(
         account_element(status="SOMETHING_NEW", complete=True)
     )
     assert parcel["status"] is ParcelStatus.UNKNOWN
-    assert parcel["delivered"] is True
+    assert parcel["delivered"] is False
 
 
 def test_normalize_account_parcel_exposes_the_pickup_office():
