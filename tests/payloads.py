@@ -157,6 +157,28 @@ def windowed_sample(code: str = ACTIVE_CODE) -> dict:
     return sample
 
 
+def letter_sample(code: str = ACTIVE_CODE) -> dict:
+    """A letter in transit, as reported by a real user's diagnostics.
+
+    Letter post is the ordinary case this integration gets wrong most easily:
+    it carries ``deliveryTimeWindow: "STANDARD"`` (a delivery class, not a time
+    range) and surface B has no timeline for it.
+    """
+    sample = active_sample(code)
+    sample.update(
+        {
+            "globalStatus": "TO_BE_DELIVERED",
+            "status": "LETTER.*.106.5",
+            "product": "LETTER.*.106",
+            "source": "LETTER",
+            "briefFormat": "UNKNOWN",
+            "deliveryTimeWindow": "STANDARD",
+            "deliveryTimeInterval": None,
+        }
+    )
+    return sample
+
+
 def pickup_sample(code: str = ACTIVE_CODE) -> dict:
     """A parcel waiting at a post office.
 

@@ -112,7 +112,7 @@ Open **Configure** on the integration entry:
 |---|---|---|---|
 | Parcels | Add / remove | — | Manage the tracked tracking codes. Changes apply immediately, no restart. **Tracking-code hubs only** — an account hub discovers its own parcels. |
 | Delivered parcels | Filter by / amount | last 7 days | How long delivered parcels stay visible on the delivered sensor. |
-| Parcel history | Include status history | off | Adds a `history` attribute per parcel with each status update. Swiss Post serves the timeline from a second endpoint, so this costs one extra request per parcel per poll. |
+| Parcel history | Include status history | off | Adds a `history` attribute per parcel with each status update. Swiss Post serves the timeline from a second endpoint, so this costs one extra request per parcel per poll. Registered **letters** are tracked normally but have no timeline on that endpoint, so their `history` stays empty. |
 
 ## Dynamic polling
 

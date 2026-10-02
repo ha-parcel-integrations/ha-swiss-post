@@ -27,6 +27,7 @@ from custom_components.swiss_post.parcels import (
 )
 from custom_components.swiss_post.tracking.parcels import (
     build_history,
+    is_letter_shipment,
     map_parcel_status,
     normalize_parcel,
 )
@@ -38,6 +39,7 @@ from .payloads import (
     active_sample,
     delivered_sample,
     event,
+    letter_sample,
     pickup_sample,
     windowed_sample,
 )
@@ -292,6 +294,37 @@ def test_normalize_prefers_a_real_delivery_window(caplog):
     # Never seen live — the first user who gets one should tell us.
     assert "delivery window" in caplog.text
     assert "issues/new" in caplog.text
+
+
+def test_a_standard_delivery_class_is_not_a_delivery_window(caplog):
+    """Reported from the field: every ordinary letter carries
+    ``deliveryTimeWindow: "STANDARD"``, which claimed to be the first delivery
+    window ever seen."""
+    parcel = normalize_parcel(letter_sample())
+    assert parcel["planned_from"] == "2026-04-16T00:00:00+02:00"  # the day estimate
+    assert parcel["planned_to"] is None
+    assert "delivery window" not in caplog.text
+
+
+def test_a_delivery_class_we_do_not_know_still_gets_reported(caplog):
+    raw = letter_sample()
+    raw["deliveryTimeWindow"] = "EVENING"
+    normalize_parcel(raw)
+    assert "delivery window" in caplog.text
+    assert "EVENING" not in caplog.text  # field names only, never values
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ({"source": "LETTER"}, True),
+        ({"product": "LETTER.*.106"}, True),
+        ({"source": "PARCEL", "product": "PARCEL.*.1"}, False),
+        ({}, False),
+    ],
+)
+def test_is_letter_shipment(raw, expected):
+    assert is_letter_shipment(raw) is expected
 
 
 def test_normalize_collapses_point_estimate_to_no_window_end():

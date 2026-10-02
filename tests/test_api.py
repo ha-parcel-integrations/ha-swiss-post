@@ -18,7 +18,14 @@ from custom_components.swiss_post.tracking.api import (
     SwissPostSession,
 )
 
-from .payloads import DELIVERED_CODE, EVENTS, delivered_sample, history_response
+from .payloads import (
+    ACTIVE_CODE,
+    DELIVERED_CODE,
+    EVENTS,
+    delivered_sample,
+    history_response,
+    letter_sample,
+)
 
 USER_ID = "<[anonymous]>b31beee6-0000-0000-0000-000000000000"
 CSRF = "csrf-token-value"
@@ -328,6 +335,40 @@ async def test_history_204_warns_only_once(caplog):
     await client.async_get_history(DELIVERED_CODE)
 
     assert caplog.text.count("did not understand our request") == 1
+
+
+async def test_a_letter_without_a_timeline_is_not_an_alarm(caplog):
+    """Surface B is a parcel-logistics host: it answers ``{"Data": null}`` for
+    letter post, which is normal and used to be reported as a broken request."""
+    session = _session(
+        gets=[_user_response(), _response(200, [letter_sample()])],
+        posts=[
+            _response(200, {"hash": DIGEST}),
+            _response(200, {"Type": 3, "Data": None}),
+        ],
+    )
+
+    parcel = await SwissPostApiClient(session).async_get_parcel(
+        ACTIVE_CODE, include_history=True
+    )
+
+    assert parcel["events"] == []
+    assert "did not understand our request" not in caplog.text
+
+
+async def test_a_letter_answered_with_204_is_not_an_alarm_either(caplog):
+    client = SwissPostApiClient(_session(gets=[], posts=[_response(204)]))
+
+    assert await client.async_get_history(ACTIVE_CODE, is_letter=True) is None
+    assert "did not understand our request" not in caplog.text
+
+
+async def test_a_parcel_without_a_timeline_is_still_an_alarm(caplog):
+    client, _ = _history_client(_response(200, {"Type": 3, "Data": None}))
+
+    await client.async_get_parcel(DELIVERED_CODE, include_history=True)
+
+    assert "did not understand our request" in caplog.text
 
 
 @pytest.mark.parametrize(

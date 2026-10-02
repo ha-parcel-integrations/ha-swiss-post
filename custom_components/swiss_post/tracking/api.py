@@ -36,6 +36,7 @@ from ..const import (
     EOS_HISTORY_URL,
     EOS_ORIGIN,
 )
+from .parcels import is_letter_shipment
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -248,7 +249,12 @@ class SwissPostApiClient:
 
         if include_history:
             try:
-                parcel["events"] = await self.async_get_history(tracking_code) or []
+                parcel["events"] = (
+                    await self.async_get_history(
+                        tracking_code, is_letter=is_letter_shipment(parcel)
+                    )
+                    or []
+                )
             except (SwissPostApiError, aiohttp.ClientError) as err:
                 _LOGGER.warning(
                     "Swiss Post event history unavailable for %s: %s",
@@ -259,11 +265,19 @@ class SwissPostApiClient:
 
         return parcel
 
-    async def async_get_history(self, tracking_code: str) -> list[Any] | None:
+    async def async_get_history(
+        self, tracking_code: str, *, is_letter: bool = False
+    ) -> list[Any] | None:
         """Fetch one parcel's event timeline from surface B.
 
         Returns the carrier's own event list, or ``None`` when the endpoint
         answers ``204``. Keyless and sessionless — a single POST.
+
+        ``is_letter`` only silences the "our request was not understood"
+        warnings: surface B is a parcel-logistics host and answers an empty
+        timeline for letter post, which is normal and not worth alarming a user
+        about. The call is still made, so letter events start flowing the day
+        Swiss Post serves them.
         """
         async with self._session.post(
             EOS_HISTORY_URL,
@@ -276,7 +290,7 @@ class SwissPostApiClient:
             if response.status == 204:
                 # Never an unknown parcel — a 204 means this endpoint did not
                 # recognise the body we sent.
-                self._warn_history_204(tracking_code)
+                self._warn_history_204(tracking_code, is_letter=is_letter)
                 return None
             if response.status != 200:
                 raise SwissPostApiError(
@@ -295,7 +309,7 @@ class SwissPostApiClient:
             # A silent-200 sibling of the 204 case: the endpoint didn't
             # recognise the request but answered with a null payload instead
             # of an empty status. Distinct from a legitimately empty `[]`.
-            self._warn_history_null_data(tracking_code)
+            self._warn_history_null_data(tracking_code, is_letter=is_letter)
             return []
         if not isinstance(data, list) or not data:
             return []
@@ -319,8 +333,14 @@ class SwissPostApiClient:
         )
 
     @staticmethod
-    def _warn_history_204(tracking_code: str) -> None:
+    def _warn_history_204(tracking_code: str, *, is_letter: bool = False) -> None:
         """Warn once about a 204 from the history endpoint (a malformed request)."""
+        if is_letter:
+            _LOGGER.debug(
+                "No event timeline for letter %s (surface B carries parcels only)",
+                tracking_code,
+            )
+            return
         if tracking_code in _history_204_logged:
             return
         _history_204_logged.add(tracking_code)
@@ -333,12 +353,18 @@ class SwissPostApiClient:
         )
 
     @staticmethod
-    def _warn_history_null_data(tracking_code: str) -> None:
+    def _warn_history_null_data(tracking_code: str, *, is_letter: bool = False) -> None:
         """Warn once about a 200 with a null ``Data`` from the history endpoint.
 
         A silent-200 sibling of the 204 case: the endpoint didn't recognise
         the request but answered with ``{"Data": null}`` instead of a 204.
         """
+        if is_letter:
+            _LOGGER.debug(
+                "No event timeline for letter %s (surface B carries parcels only)",
+                tracking_code,
+            )
+            return
         if tracking_code in _history_null_data_logged:
             return
         _history_null_data_logged.add(tracking_code)

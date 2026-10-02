@@ -110,9 +110,25 @@ guessed. Do not "simplify" the sort away.
 **Pre-1.0 unknowns**, each with a one-shot WARNING and an issue link
 (`tracking/parcels.py`): no pickup-point `globalStatus` token is known on the
 public surface (pickup is inferred from `deliveryPostOfficeZip` / `avis`
-instead), and `deliveryRange` / `deliveryTimeWindow` have never been seen
-populated. The warnings log field *names*, never values — a pickup point or a
-delivery window is location data.
+instead), and no real delivery window has been seen yet. The warnings log field
+*names*, never values — a pickup point or a delivery window is location data.
+
+**`deliveryTimeWindow` is a delivery class, not a time range.** A plain
+domestic letter carries `"STANDARD"` while `deliveryTimeInterval` stays null, so
+truthiness-checking the field made every ordinary shipment announce itself as
+the first delivery window ever observed (reported from the field, issue #2).
+`_NO_WINDOW_VALUES` holds the values known to mean "no window"; anything else
+still reports, because an evening- or express-class value would be worth seeing.
+
+**Letter post has no timeline on surface B, and that is not an error.**
+`eosapi.postlogistics.ch` answers `{"Data": null}` for letter codes — the same
+shape as a request it did not understand. `async_get_history` takes an
+`is_letter` flag (from `tracking/parcels.is_letter_shipment`, keyed on
+`source`/`product`) that downgrades those two warnings to debug, so a user who
+tracks letters is not told their integration is broken. The call is still made,
+so letter events start flowing if Swiss Post ever serves them. Letters are
+**not** filtered out of the tracking surface — only the account surface excludes
+them.
 
 ## Two sources: `tracking/` and `account/`
 

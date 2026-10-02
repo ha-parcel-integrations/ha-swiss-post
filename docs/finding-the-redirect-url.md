@@ -111,6 +111,13 @@ the redirect URL isn't tied to a device, only to that one sign-in attempt.
   The redirect to the Post app page counts as a page navigation, which clears
   the network log — so without that option the request is gone before you can
   look for it.
+- **I found a redirect, but it points at `account.post.ch` or
+  `service.post.ch`.** That is Swiss Post's *web* customer login (Kundenlogin),
+  a different sign-in system from the one the app uses, and its addresses can
+  never be used here. The only address that works starts with
+  `https://app.post.ch/mainapp/auth/callback`. If that is what you are seeing,
+  you are signing in on the wrong page — start again from the link Home
+  Assistant showed you, which points at `login.swissid.ch`.
 - **The address I copied gets rejected by Home Assistant.** Paste the request
   URL exactly as shown, including the full query string (`?code=…&state=…`).
   The code is single-use and short-lived — if more than a couple of minutes

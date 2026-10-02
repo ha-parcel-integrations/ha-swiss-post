@@ -46,6 +46,13 @@ _STATUS_MAP: dict[str, ParcelStatus] = {
 }
 
 
+# ``deliveryTimeWindow`` names a delivery class, not a time range: a plain
+# domestic letter carries ``"STANDARD"`` while ``deliveryTimeInterval`` stays
+# null. Treating it as a window made every ordinary shipment claim to be the
+# first one ever seen with a delivery time.
+_NO_WINDOW_VALUES = frozenset({"STANDARD"})
+
+
 def map_parcel_status(code: str | None) -> ParcelStatus:
     """Map a ``globalStatus`` code to a canonical :class:`ParcelStatus`.
 
@@ -138,6 +145,17 @@ def _dimensions_cm(properties: dict) -> dict[str, Any] | None:
     return format_dimensions(length, width, height)
 
 
+def is_letter_shipment(raw: dict) -> bool:
+    """Whether surface A describes this shipment as letter post.
+
+    Letters stay tracked — only surface B's event timeline treats them
+    differently (see :meth:`.api.SwissPostApi.async_get_history`).
+    """
+    if str(raw.get("source", "")).upper() == "LETTER":
+        return True
+    return str(raw.get("product", "")).upper().startswith("LETTER")
+
+
 def _receiver(raw: dict) -> str | None:
     """Return the recipient as "zip city".
 
@@ -158,13 +176,13 @@ def _delivery_window(raw: dict) -> tuple[str | None, str | None]:
 
     ``deliveryRange`` is the real window and takes precedence;
     ``calculatedDeliveryDate`` is the day-level estimate every parcel carries.
-    Only ``calculatedDeliveryDate`` has ever been seen populated, so a parcel
-    that does carry a window is worth a one-shot report.
+    Neither window field has been seen carrying an actual time range yet, so a
+    parcel that does carry one is worth a one-shot report.
     """
     windowed = [
         field
         for field in ("deliveryRange", "deliveryTimeWindow", "deliveryTimeInterval")
-        if raw.get(field)
+        if raw.get(field) and str(raw.get(field)) not in _NO_WINDOW_VALUES
     ]
     if windowed:
         warn_once(
