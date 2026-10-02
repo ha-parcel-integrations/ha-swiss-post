@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.swiss_post.account.parcels import normalize_account_parcel
 from custom_components.swiss_post.diagnostics import (
     async_get_config_entry_diagnostics,
 )
@@ -105,3 +106,40 @@ async def test_diagnostics_reports_the_account_four_way_split(hass):
     assert result["entry_data"]["device_id"] == "**REDACTED**"
     assert result["entry_data"]["email"] == "**REDACTED**"
     assert result["incoming"][0]["raw"]["mailpieceId"] == "**REDACTED**"
+
+
+async def test_diagnostics_redacts_the_enrichment_event_coordinates(hass):
+    """The last event of a delivered parcel is the user's own doorstep."""
+    from custom_components.swiss_post.const import CONF_SOURCE, DOMAIN, SOURCE_ACCOUNT
+
+    from .payloads import account_detail, account_element
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="account:user-1",
+        data={CONF_SOURCE: SOURCE_ACCOUNT},
+        options={},
+    )
+    entry.add_to_hass(hass)
+    entry.runtime_data = MagicMock()
+    coordinator = entry.runtime_data.coordinator
+    coordinator.data = {
+        "incoming_active": [
+            normalize_account_parcel(account_element(), detail=account_detail())
+        ],
+        "incoming_delivered": [],
+        "outgoing_active": [],
+        "outgoing_delivered": [],
+    }
+    coordinator.delivered_codes = set()
+
+    result = await async_get_config_entry_diagnostics(hass, entry)
+
+    detail = result["incoming"][0]["raw"]["detail"]
+    assert detail["deliveryAddress"] == "**REDACTED**"
+    assert [event.get("location") for event in detail["events"]] == [
+        None,
+        "**REDACTED**",
+    ]
+    # The weight and the size are not personal and stay readable for debugging.
+    assert detail["physicalDimensions"]["weight"] == "1.14 kg"

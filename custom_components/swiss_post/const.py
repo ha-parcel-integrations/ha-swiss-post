@@ -164,6 +164,27 @@ OIDC_SCOPE = "openid profile email address phone"
 # UUID works as the device id.
 ACCOUNT_OVERVIEW_URL = "https://app.post.ch/mobserv/v1/mailpiece/tracking/overview"
 
+# The per-parcel enrichment. The inbox is a summary — no weight, dimensions or
+# event timeline — so those come from a second call per parcel.
+#
+# Deliberately the *anonymous* ``search`` endpoint keyed on the tracking number,
+# not the authenticated ``detail`` endpoint keyed on the inbox's opaque
+# ``mailpieceKey``: both return the same record, but this one has been seen
+# answering a real ``200`` and needs no bearer, so an enrichment failure can
+# never cost the entry its token chain. ``dontFollow=true`` keeps the lookup
+# from attaching the parcel to this device's followed list on every poll.
+ACCOUNT_DETAIL_URL = "https://app.post.ch/mobserv/v1/mailpiece/tracking/search"
+
+# How many enrichment calls may be in flight at once. The inbox is small, but a
+# busy account should not fan out one request per parcel simultaneously.
+ACCOUNT_DETAIL_CONCURRENCY = 5
+
+# Opt-in, and off by default, because it costs one request per parcel per poll
+# on top of the single inbox call — the same trade-off as the tracking surface's
+# history option, which is why that one is off by default too.
+CONF_ACCOUNT_DETAILS = "account_details"
+DEFAULT_ACCOUNT_DETAILS = False
+
 # Refresh the id_token this many seconds before it actually expires, so a poll
 # never races the expiry. The id_token lives 3600 s; the refresh_token rotates
 # on every refresh and must be persisted back to the entry each time.

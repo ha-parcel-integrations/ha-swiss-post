@@ -59,7 +59,11 @@
         "data": {
           "delivered_filter_type": "Bezorgde pakketten: filteren op",
           "delivered_filter_amount": "Bezorgde pakketten: aantal",
-          "include_history": "Statusgeschiedenis toevoegen"
+          "include_history": "Statusgeschiedenis toevoegen",
+          "account_details": "Gewicht, formaat en statusgeschiedenis toevoegen"
+        },
+        "data_description": {
+          "account_details": "Laadt de volledige gegevens van elke zending in je postvak. Dat kost per update één extra aanvraag per zending, daarom staat het standaard uit."
         }
       }
     },

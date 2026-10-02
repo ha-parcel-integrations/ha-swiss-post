@@ -31,6 +31,7 @@ from urllib.parse import urlencode
 import aiohttp
 
 from ..const import (
+    ACCOUNT_DETAIL_URL,
     ACCOUNT_OVERVIEW_URL,
     ACCOUNT_TOKEN_REFRESH_MARGIN_SECONDS,
     OIDC_AUTHORIZE_URL,
@@ -259,3 +260,40 @@ class SwissPostAccountClient:
         if not isinstance(payload, dict):
             raise SwissPostAccountApiError("inbox payload was not a JSON object")
         return payload
+
+    async def async_get_detail(self, mailpiece_id: str) -> dict[str, Any] | None:
+        """Return the full per-parcel record, or ``None`` when there is none.
+
+        The enrichment the inbox summary lacks: event timeline, weight and
+        dimensions. This call carries **no bearer** — it is the same anonymous
+        lookup the app uses for a bare tracking number, so a parcel the public
+        surface does not know yet (one not handed in) simply answers ``404`` and
+        the parcel keeps its summary-only fields instead of failing the poll.
+        """
+        if not mailpiece_id:
+            return None
+        async with self._session.get(
+            ACCOUNT_DETAIL_URL,
+            params={"mailpieceId": mailpiece_id, "dontFollow": "true"},
+            headers={
+                "x-device-id": self._device_id or "",
+                "Accept": "application/json",
+            },
+        ) as response:
+            if response.status == 404:
+                return None
+            if response.status != 200:
+                raise SwissPostAccountApiError(
+                    "parcel detail request failed", status_code=response.status
+                )
+            try:
+                payload = await response.json(content_type=None)
+            except ValueError as err:
+                raise SwissPostAccountApiError(
+                    "parcel detail returned invalid JSON"
+                ) from err
+        if not isinstance(payload, dict):
+            raise SwissPostAccountApiError("parcel detail was not a JSON object")
+        # The record sits under "detail"; an empty match answers 200 with none.
+        detail = payload.get("detail")
+        return detail if isinstance(detail, dict) else None

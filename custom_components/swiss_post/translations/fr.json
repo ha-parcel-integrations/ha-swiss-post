@@ -59,7 +59,11 @@
         "data": {
           "delivered_filter_type": "Colis livrés : filtrer par",
           "delivered_filter_amount": "Colis livrés : nombre",
-          "include_history": "Inclure l’historique des statuts"
+          "include_history": "Inclure l’historique des statuts",
+          "account_details": "Inclure le poids, les dimensions et l’historique des statuts"
+        },
+        "data_description": {
+          "account_details": "Charge les informations complètes de chaque envoi de votre boîte. Cela coûte une requête supplémentaire par envoi à chaque actualisation, c’est pourquoi l’option est désactivée par défaut."
         }
       }
     },

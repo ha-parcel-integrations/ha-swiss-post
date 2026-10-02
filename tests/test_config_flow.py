@@ -257,6 +257,38 @@ async def test_account_options_menu_hides_the_parcel_page(hass):
     assert result["menu_options"] == ["settings"]
 
 
+async def test_account_settings_offer_the_details_toggle_not_history(hass):
+    """On the inbox the timeline arrives bundled with the weight and the size,
+    so one toggle buys all three and a separate history switch would mislead."""
+    from custom_components.swiss_post.const import CONF_ACCOUNT_DETAILS
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="account:user-1",
+        data={CONF_SOURCE: SOURCE_ACCOUNT},
+        options={},
+    )
+    entry.add_to_hass(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "settings"}
+    )
+    keys = {str(key.schema) for key in result["data_schema"].schema}
+    assert CONF_ACCOUNT_DETAILS in keys
+    assert CONF_INCLUDE_HISTORY not in keys
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_DELIVERED_FILTER_TYPE: "days",
+            CONF_DELIVERED_FILTER_AMOUNT: 7,
+            CONF_ACCOUNT_DETAILS: True,
+        },
+    )
+    assert result["type"] == "create_entry"
+    assert result["data"][CONF_ACCOUNT_DETAILS] is True
+
+
 def _hub(parcels: list[dict]) -> MockConfigEntry:
     return MockConfigEntry(
         domain=DOMAIN,

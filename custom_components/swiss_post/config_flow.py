@@ -27,6 +27,7 @@ from .account.client import (
 )
 from .const import (
     CONF_ACCESS_TOKEN,
+    CONF_ACCOUNT_DETAILS,
     CONF_ACCOUNT_SUB,
     CONF_DELIVERED_FILTER_AMOUNT,
     CONF_DELIVERED_FILTER_TYPE,
@@ -38,6 +39,7 @@ from .const import (
     CONF_REFRESH_TOKEN,
     CONF_SOURCE,
     CONF_TRACKING_CODE,
+    DEFAULT_ACCOUNT_DETAILS,
     DEFAULT_DELIVERED_FILTER_AMOUNT,
     DEFAULT_DELIVERED_FILTER_TYPE,
     DEFAULT_INCLUDE_HISTORY,
@@ -237,7 +239,7 @@ class SwissPostConfigFlow(ConfigFlow, domain=DOMAIN):
                     options={
                         CONF_DELIVERED_FILTER_TYPE: DEFAULT_DELIVERED_FILTER_TYPE,
                         CONF_DELIVERED_FILTER_AMOUNT: DEFAULT_DELIVERED_FILTER_AMOUNT,
-                        CONF_INCLUDE_HISTORY: DEFAULT_INCLUDE_HISTORY,
+                        CONF_ACCOUNT_DETAILS: DEFAULT_ACCOUNT_DETAILS,
                     },
                 )
 
@@ -290,12 +292,18 @@ class SwissPostOptionsFlowHandler(OptionsFlow):
     discovers its own parcels, so it has nothing to edit there.
     """
 
+    def _is_tracking(self) -> bool:
+        """Whether this entry is a tracking hub (vs an account inbox)."""
+        return (
+            self.config_entry.data.get(CONF_SOURCE, SOURCE_TRACKING) == SOURCE_TRACKING
+        )
+
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Offer parcel management separately from integration settings."""
         menu_options = ["settings"]
-        if self.config_entry.data.get(CONF_SOURCE, SOURCE_TRACKING) == SOURCE_TRACKING:
+        if self._is_tracking():
             menu_options.insert(0, "parcels")
         return self.async_show_menu(step_id="init", menu_options=menu_options)
 
@@ -344,7 +352,22 @@ class SwissPostOptionsFlowHandler(OptionsFlow):
     async def async_step_settings(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Show and handle non-parcel integration settings."""
+        """Show and handle non-parcel integration settings.
+
+        The last toggle differs per source. A tracking hub gets the history
+        option, which buys the event timeline from the second public host. An
+        account inbox gets the details option instead: there, the timeline comes
+        bundled with the weight and the dimensions in one enrichment call per
+        parcel, so offering two separate switches would be a lie about what the
+        extra requests buy.
+        """
+        extra_option = (
+            CONF_INCLUDE_HISTORY if self._is_tracking() else CONF_ACCOUNT_DETAILS
+        )
+        extra_default = (
+            DEFAULT_INCLUDE_HISTORY if self._is_tracking() else DEFAULT_ACCOUNT_DETAILS
+        )
+
         if user_input is not None:
             return self.async_create_entry(
                 title="",
@@ -354,7 +377,7 @@ class SwissPostOptionsFlowHandler(OptionsFlow):
                     CONF_DELIVERED_FILTER_AMOUNT: int(
                         user_input[CONF_DELIVERED_FILTER_AMOUNT]
                     ),
-                    CONF_INCLUDE_HISTORY: bool(user_input[CONF_INCLUDE_HISTORY]),
+                    extra_option: bool(user_input[extra_option]),
                 },
             )
 
@@ -387,10 +410,8 @@ class SwissPostOptionsFlowHandler(OptionsFlow):
                         )
                     ),
                     vol.Required(
-                        CONF_INCLUDE_HISTORY,
-                        default=current.get(
-                            CONF_INCLUDE_HISTORY, DEFAULT_INCLUDE_HISTORY
-                        ),
+                        extra_option,
+                        default=current.get(extra_option, extra_default),
                     ): selector.BooleanSelector(),
                 }
             ),

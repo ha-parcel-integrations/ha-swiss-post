@@ -8,16 +8,26 @@ read them through its ``_bucket`` helper.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
+import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from ..const import DOMAIN, MID_INTERVAL_MINUTES, ParcelStatus
+from ..const import (
+    ACCOUNT_DETAIL_CONCURRENCY,
+    CONF_ACCOUNT_DETAILS,
+    DEFAULT_ACCOUNT_DETAILS,
+    DOMAIN,
+    MID_INTERVAL_MINUTES,
+    ParcelStatus,
+)
 from ..events import (
     fire_incoming_change_events,
     fire_outgoing_change_events,
@@ -75,6 +85,42 @@ class SwissPostAccountCoordinator(DataUpdateCoordinator[dict[str, list[dict]]]):
         """Account polls are batched; no parcel is ever skipped from a fetch."""
         return set()
 
+    async def _async_details(
+        self, items: list[dict]
+    ) -> list[dict[str, Any] | None]:
+        """Fetch the per-parcel enrichment record for each inbox item.
+
+        One extra request per parcel, which is why it is opt-in. A parcel whose
+        enrichment fails keeps its summary-only fields rather than failing the
+        whole poll — the inbox itself already succeeded, and losing a weight is
+        not worth losing every parcel.
+        """
+        semaphore = asyncio.Semaphore(ACCOUNT_DETAIL_CONCURRENCY)
+
+        async def one(item: dict) -> dict[str, Any] | None:
+            async with semaphore:
+                return await self._client.async_get_detail(str(item.get("mailpieceId") or ""))
+
+        results = await asyncio.gather(
+            *(one(item) for item in items), return_exceptions=True
+        )
+        details: list[dict[str, Any] | None] = []
+        for item, result in zip(items, results):
+            if isinstance(result, BaseException):
+                if not isinstance(
+                    result, (SwissPostAccountApiError, aiohttp.ClientError)
+                ):
+                    raise result
+                _LOGGER.warning(
+                    "Swiss Post could not load the details of %s: %s",
+                    item.get("mailpieceId"),
+                    result,
+                )
+                details.append(None)
+            else:
+                details.append(result)
+        return details
+
     def _device_id(self) -> str | None:
         """Resolve (and cache) this entry's device id for event payloads."""
         if self._cached_device_id is not None:
@@ -113,10 +159,22 @@ class SwissPostAccountCoordinator(DataUpdateCoordinator[dict[str, list[dict]]]):
             if isinstance(item, dict) and not is_letter(item)
         ]
 
-        incoming_raw = [item for item in raw_items if not is_outgoing(item)]
-        outgoing_raw = [item for item in raw_items if is_outgoing(item)]
-        incoming = [normalize_account_parcel(item) for item in incoming_raw]
-        outgoing = [normalize_account_parcel(item) for item in outgoing_raw]
+        # The inbox is a summary; weight, dimensions and the event timeline need
+        # a second call per parcel. Opt-in for exactly that reason, and read
+        # fresh every poll so toggling the option takes effect on the next one.
+        if self.config_entry.options.get(
+            CONF_ACCOUNT_DETAILS, DEFAULT_ACCOUNT_DETAILS
+        ):
+            details = await self._async_details(raw_items)
+        else:
+            details = [None] * len(raw_items)
+
+        parcels = [
+            normalize_account_parcel(item, detail=detail)
+            for item, detail in zip(raw_items, details)
+        ]
+        incoming = [p for p, item in zip(parcels, raw_items) if not is_outgoing(item)]
+        outgoing = [p for p, item in zip(parcels, raw_items) if is_outgoing(item)]
 
         device_id = self._device_id()
 

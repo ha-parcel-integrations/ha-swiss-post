@@ -73,6 +73,12 @@ TO_REDACT = {
     "collectionCode",
     "pickupOffice",
     "summaryDescription",
+    # account payload (per-parcel enrichment) — every event carries the
+    # coordinates of where the parcel physically was, and the last one is the
+    # user's doorstep.
+    "location",
+    "latitude",
+    "longitude",
 }
 
 

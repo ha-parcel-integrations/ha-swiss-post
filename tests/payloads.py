@@ -265,6 +265,73 @@ def account_element(
     }
 
 
+def account_detail(
+    mailpiece_id: str = ACCOUNT_IN_ID,
+    *,
+    weight: str | None = "1.14 kg",
+    dimensions: str | None = "40.0 x 25.0 x 15.5 cm",
+    events: list | None = None,
+) -> dict:
+    """The per-parcel enrichment record, as the live 200 returned it.
+
+    Copied from a real response (``996014474200248609``, 2026-09-24) with the
+    address fields blanked: weight and dimensions really are **formatted
+    strings**, and event timestamps really are epoch milliseconds.
+    """
+    return {
+        "mailpieceId": mailpiece_id,
+        "mailpieceKey": "opaque-detail-key",
+        "mailpieceType": "PARCEL",
+        "productName": "Parcel",
+        "isInternationalShipment": False,
+        "userAddressIsVerified": False,
+        "valueAddedServices": [],
+        "mailpieceBadges": [],
+        "billingItems": [],
+        "orders": {"orderedServices": []},
+        "events": events
+        if events is not None
+        else [
+            {
+                "timestamp": 1776328109000,
+                "title": "Delivered",
+                "subtitle": "Deposited with authorization for delivery",
+                "eventType": "OTHER",
+            },
+            {
+                "timestamp": 1776314232000,
+                "title": "Loading into delivery vehicle",
+                "subtitle": "8902 Urdorf Zustellung Pakete",
+                "eventType": "OTHER",
+                "location": {"latitude": 47.36763, "longitude": 8.42760},
+                "locationPrecision": "HOUSE",
+            },
+        ],
+        "mailpieceStatus": {
+            "status": "DELIVERED",
+            "title": "Delivered",
+            "subtitle": "16 April 2026 10:28",
+            "timestamp": 1776328109000,
+            "isComplete": True,
+        },
+        "deliveryAddress": {
+            "addressDetail": {"city": "Bern", "zip4": "3011"},
+            "addressType": "OTHER",
+            "postboxDeliveryStatus": "NOT_POSSIBLE",
+        },
+        "physicalDimensions": {"dimensions": dimensions, "weight": weight},
+    }
+
+
+def detail_response(detail: dict | None = None) -> dict:
+    """The envelope the enrichment call answers with."""
+    return {
+        "detail": detail if detail is not None else account_detail(),
+        "singleResult": True,
+        "singleResultNoInfo": detail is None,
+    }
+
+
 def overview_response(
     in_progress: list | None = None, completed: list | None = None
 ) -> dict:

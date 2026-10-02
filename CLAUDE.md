@@ -45,6 +45,13 @@ vocabulary, the traps) live in `carrier-research/swiss-post/api/` in the private
 research repo — **not** here and not in a local `docs/api/`. What follows is
 integration-side only.
 
+**The history option means different things per source, deliberately.** On a
+tracking hub `include_history` buys the event timeline from the second public
+host and nothing else. On an account hub the timeline, the weight and the
+dimensions all come from the *same* enrichment call, so one option
+(`account_details`) buys all three and the options page shows only that one —
+two switches would misrepresent what the extra requests pay for.
+
 **No `awaiting_pickup` sensor yet — pending a status token seen on the wire,
 not a structural exemption.** Swiss Post does have a pickup-point concept and
 both normalisers derive a `pickup: bool`. On the public surface no
@@ -172,9 +179,41 @@ buckets through it, never `coordinator.data` directly.
   envelope-scan feature like PostNL's, so a letter is just a thinner parcel —
   deliberately filtered rather than surfaced. An unknown type is kept.
 - **The overview is a summary**: no weight, dimensions, ETA window or event
-  timeline, so those stay `None` on an account parcel. They live on a per-parcel
-  `detail` call (keyed on `mailpieceKey`), which is a known, documented next step
-  rather than a gap.
+  timeline. The first three come from a per-parcel enrichment call behind the
+  `account_details` option (see below); no ETA exists on either call.
+- **`isComplete` is not `delivered`.** It means "this parcel is finished", and a
+  **returned** parcel is finished too — mapping it to `delivered` filed parcels
+  that went back to the sender as delivered. Only `mailpieceStatusType`
+  separates the two, so it is the sole source for `delivered`. The side effect
+  is deliberate: an unmapped status on a completed parcel now reads
+  *undelivered* rather than guessing.
+- **The enrichment call is the anonymous `search`, not the authenticated
+  `detail`.** Both return the same `MailpieceTrackingDetail` record, but
+  `search` is keyed on the tracking number the overview already gives us, has
+  been seen answering a real `200`, and carries **no bearer** — so a failed
+  enrichment can never cost the entry its token chain. `detail` needs the opaque
+  `mailpieceKey` and has only ever been probed returning `404`. Keep
+  `dontFollow=true`: without it every poll re-follows the parcel onto this
+  device's list.
+- **Weight and dimensions arrive as display strings** (`"1.14 kg"`,
+  `"40.0 x 25.0 x 15.5 cm"`), the one place this backend is harder to read than
+  the public surface. Whether they are localised under another
+  `Accept-Language` is unprobed, so the parsers accept a decimal comma up front
+  and report an unreadable value once (logging its *length*, not the value).
+  The three dimensions are sorted before being labelled, exactly as on the
+  public surface.
+- **`eventType` is not a status vocabulary** — it read `OTHER` on every event of
+  every parcel ever seen, including the delivery itself, so account history
+  entries keep `status: null` like the public timeline's. Anything other than
+  `OTHER` fires a one-shot report, because that *would* be mappable.
+- **Event coordinates never leave `raw`.** Each enrichment event can carry a
+  `location` with latitude/longitude, and the last event of a delivered parcel
+  is the user's doorstep. `build_account_history` drops it, and
+  `location`/`latitude`/`longitude` are in the diagnostics redaction set.
+- **`statusEndTimestamp` is the only ETA candidate in the whole model** and has
+  never been populated. It is *not* mapped to `planned_from`/`planned_to`: on a
+  pickup parcel it could just as easily be the collection deadline. A populated
+  one on an in-flight parcel fires a one-shot report instead.
 - **The login is browser paste-back, and that is a feature.** SwissID registers
   one redirect URI, built to open the mobile app, so it bounces to a Post app
   page and the code never stays in the address bar — users copy it from the

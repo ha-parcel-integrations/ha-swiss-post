@@ -59,7 +59,11 @@
         "data": {
           "delivered_filter_type": "Pacchi consegnati: filtra per",
           "delivered_filter_amount": "Pacchi consegnati: quantità",
-          "include_history": "Includi cronologia dello stato"
+          "include_history": "Includi cronologia dello stato",
+          "account_details": "Includi peso, dimensioni e cronologia dello stato"
+        },
+        "data_description": {
+          "account_details": "Carica i dati completi di ogni spedizione nella casella. Comporta una richiesta aggiuntiva per spedizione a ogni aggiornamento, quindi è disattivato per impostazione predefinita."
         }
       }
     },
