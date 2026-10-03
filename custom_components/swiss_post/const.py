@@ -40,9 +40,13 @@ KNOWN_CAPABILITIES = frozenset(
 # normalize_parcel() in parcels.py: everything not listed here comes back as a
 # literal None there. Swiss Post is the one carrier in the suite whose merged
 # two-host payload fills every optional field, weight and dimensions included.
-CAPABILITIES = frozenset(
-    {"weight", "dimensions", "delivery_window", "pickup_point", "url", "history"}
-)
+CAPABILITIES_BY_VARIANT = {
+    "Account": frozenset({"weight", "dimensions", "pickup_point", "url", "history"}),
+    "Tracking": frozenset(
+        {"weight", "dimensions", "delivery_window", "pickup_point", "url", "history"}
+    ),
+}
+CAPABILITIES = CAPABILITIES_BY_VARIANT["Tracking"]
 
 # Swiss Post splits parcel tracking over two keyless hosts that each hold half
 # the data, so this integration talks to both:
