@@ -64,22 +64,42 @@ but it has not been seen on a real parcel yet. Add the sensor once one shows up;
 this is not the same as a locker-less carrier's structural exemption
 (`.github/CONVENTIONS.md`'s pickup-point convention).
 
-**Two hosts, each with half the data.** `service.post.ch/ekp-web` has status,
-ETA, weight, dimensions and the delivery booleans but its `events` array is
-always empty; `eosapi.postlogistics.ch` has the event timeline and no usable
-status vocabulary. `tracking/api.py` merges the second into the first's `events` key, so
-`tracking/parcels.py` only ever sees one payload shape.
+**One host, two calls.** `service.post.ch/ekp-web` has status, ETA, weight,
+dimensions and the delivery booleans, but the `events` array on the search
+result is always empty — the timeline is a separate call on the same session.
+`tracking/api.py` merges it into that `events` key, so `tracking/parcels.py`
+only ever sees one payload shape.
 
-**⚠️ The timeline host answers a server-level 404 as of 2026-10-17.**
-`POST eosapi.postlogistics.ch/api/trackandtrace/public` returns an IIS
-`text/html` "Not Found" page — identical for a real tracking number, a bogus
-one and an empty body — so the route itself is gone rather than any parcel
-being unknown to it. Twenty-four real codes were tried; the status host is
-unaffected and every parcel still resolves, just without a timeline. The
-failure is handled where it happens: `_warn_history_unavailable` reports one
-line per distinct failure per HA session instead of one per parcel per poll,
-and carries no tracking code. Before changing anything here, re-probe — if
-Swiss Post has moved the route, the fix is the URL, not the mapping.
+**The timeline comes from the tracker's own host, not a second one.** It used
+to be fetched from `eosapi.postlogistics.ch`, which answers a server-level
+`text/html` 404 for a real number, a bogus one and an empty body alike — that
+host belongs to Swiss Post's freight arm and moved to
+`eosapi.swisspost-cargo.com`, where an ordinary consumer parcel comes back only
+as a thin relay whose codes never read as delivered. So the timeline now comes
+from `GET /shipment/id/{identity}/events` on the same `service.post.ch`
+session, keyed on the shipment's own `identity` from the search result.
+
+**Those events carry no wording — only a dotted `eventCode`, a timestamp and a
+place.** Swiss Post's tracker resolves the wording against
+`core/rest/translations/en/shipment-text-messages`, which is keyless, ~130 KB
+and identical for every shipment, so it is fetched **once per Home Assistant
+run** and cached; a failure is cached too rather than retried every poll. A key
+is `KIND.*.PRODUCT.CODE.DIRECTION`, and `resolve_event_text` tries the
+product-specific entry, the `ALL_PROD` catch-all and the wildcard in turn,
+each against `*`/`INLAND`/`IMPORT`/`EXPORT` — the direction slot is not always
+`*` (code `815` only exists under `IMPORT`/`EXPORT`), and Swiss Post exposes no
+direction field, so each is tried rather than derived. A sub-event narrows the
+key further; those are the "Reason: …" variants. On 197 events across 19 real
+parcels this resolved 195; without a hit the entry keeps its own `eventCode`
+as `raw_status`, which reads poorly but still says which scan it was.
+
+**The wording is written onto a *copy* of each event, as `description`.** It is
+our derived value, not Swiss Post's, so the parsed payload is left as it
+arrived. Per-event `status` stays `null`: the parcel's canonical status comes
+from the shipment's `globalStatus`, and the per-event code vocabulary runs to
+thousands of values. Every event also carries `signatureId`,
+`signatureSigner`, `signatureDate` and `imageId` — proof material, redacted in
+diagnostics.
 
 **The history option controls the call count, not just an attribute.** Two
 requests per parcel per poll with history off, three with it on. That is why

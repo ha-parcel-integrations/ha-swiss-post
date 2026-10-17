@@ -22,21 +22,22 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from urllib.parse import quote
 
 import aiohttp
 
 from ..const import (
     BROWSER_USER_AGENT,
     CSRF_HEADER,
+    EKP_EVENTS_URL,
     EKP_HISTORY_ITEM_URL,
     EKP_HISTORY_URL,
     EKP_REFERER,
+    EKP_TEXTS_SECTION,
+    EKP_TEXTS_URL,
     EKP_USER_URL,
-    EOS_CULTURE,
-    EOS_HISTORY_URL,
-    EOS_ORIGIN,
 )
-from .parcels import is_letter_shipment
+from .parcels import resolve_event_text
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,21 +46,18 @@ _EKP_HEADERS = {
     "Referer": EKP_REFERER,
 }
 
-_EOS_HEADERS = {
-    "User-Agent": BROWSER_USER_AGENT,
-    "Origin": EOS_ORIGIN,
-    "Referer": f"{EOS_ORIGIN}/",
-}
-
 # Tracking codes we have already reported as empty, or as a malformed history
 # request, so each is logged once per HA session instead of on every poll.
 _empty_result_logged: set[str] = set()
 
+# The wording table, held as a one-item list so a successful empty fetch is
+# still "already tried". One table serves every shipment and every parcel.
+_event_texts_cache: list[dict[str, str]] = []
+_texts_failure_logged: set[bool] = set()
+
 # Distinct event-history failures already reported, so a route that is down
 # for every parcel costs one log line per HA session, not one per poll.
 _history_failure_logged: set[str] = set()
-_history_204_logged: set[str] = set()
-_history_null_data_logged: set[str] = set()
 
 
 class SwissPostApiError(Exception):
@@ -234,9 +232,9 @@ class SwissPostApiClient:
         yet. Any unexpected response raises :class:`SwissPostApiError`; network
         errors propagate as ``aiohttp.ClientError``.
 
-        With ``include_history`` the event timeline is fetched from surface B
-        and merged in. A failure there never fails the parcel: the timeline is
-        a nice-to-have, the status is not.
+        With ``include_history`` the event timeline is fetched and merged in.
+        A failure there never fails the parcel: the timeline is a nice-to-have,
+        the status is not.
         """
         shipments = await self._tracking_session.async_lookup(tracking_code)
 
@@ -254,10 +252,7 @@ class SwissPostApiClient:
         if include_history:
             try:
                 parcel["events"] = (
-                    await self.async_get_history(
-                        tracking_code, is_letter=is_letter_shipment(parcel)
-                    )
-                    or []
+                    await self.async_get_history(parcel["identity"]) or []
                 )
             except (SwissPostApiError, aiohttp.ClientError) as err:
                 # Keyed on the failure, not the code: when the timeline route
@@ -268,33 +263,19 @@ class SwissPostApiClient:
 
         return parcel
 
-    async def async_get_history(
-        self, tracking_code: str, *, is_letter: bool = False
-    ) -> list[Any] | None:
-        """Fetch one parcel's event timeline from surface B.
+    async def async_get_history(self, identity: str) -> list[Any]:
+        """Fetch one shipment's event timeline, oldest first.
 
-        Returns the carrier's own event list, or ``None`` when the endpoint
-        answers ``204``. Keyless and sessionless — a single POST.
-
-        ``is_letter`` only silences the "our request was not understood"
-        warnings: surface B is a parcel-logistics host and answers an empty
-        timeline for letter post, which is normal and not worth alarming a user
-        about. The call is still made, so letter events start flowing the day
-        Swiss Post serves them.
+        Keyed on the shipment's own ``identity`` from the search result, on the
+        same anonymous session. Each event is given a ``description`` holding
+        its resolved wording — a field the carrier does not send, because it
+        serves the wording separately (see :meth:`_async_event_texts`); it is
+        written here so the pure mapping layer sees one shape.
         """
-        async with self._session.post(
-            EOS_HISTORY_URL,
-            params={"culture": EOS_CULTURE},
-            headers=_EOS_HEADERS,
-            # Singular and capitalised. A plural/lowercase spelling is not
-            # rejected — it is silently ignored with a 204.
-            json={"Identifier": tracking_code},
+        async with self._session.get(
+            EKP_EVENTS_URL.format(identity=quote(str(identity), safe="")),
+            headers=_EKP_HEADERS,
         ) as response:
-            if response.status == 204:
-                # Never an unknown parcel — a 204 means this endpoint did not
-                # recognise the body we sent.
-                self._warn_history_204(tracking_code, is_letter=is_letter)
-                return None
             if response.status != 200:
                 raise SwissPostApiError(
                     f"HTTP {response.status} from the event history endpoint"
@@ -304,23 +285,64 @@ class SwissPostApiClient:
             except ValueError as err:
                 raise SwissPostApiError(f"unparseable history body ({err})") from err
 
-        if not isinstance(payload, dict):
-            raise SwissPostApiError("unexpected history body (not a JSON object)")
+        if not isinstance(payload, list):
+            raise SwissPostApiError("unexpected history body (not a JSON list)")
 
-        data = payload.get("Data")
-        if data is None:
-            # A silent-200 sibling of the 204 case: the endpoint didn't
-            # recognise the request but answered with a null payload instead
-            # of an empty status. Distinct from a legitimately empty `[]`.
-            self._warn_history_null_data(tracking_code, is_letter=is_letter)
+        # Copied, not mutated in place: the wording is ours, not the
+        # carrier's, and the parsed payload should stay as it arrived.
+        events = [dict(event) for event in payload if isinstance(event, dict)]
+        if not events:
             return []
-        if not isinstance(data, list) or not data:
-            return []
-        first = data[0]
-        if not isinstance(first, dict):
-            raise SwissPostApiError("unexpected history entry (not a JSON object)")
-        events = first.get("History")
-        return events if isinstance(events, list) else []
+
+        texts = await self._async_event_texts()
+        for event in events:
+            wording = resolve_event_text(texts, event)
+            if wording is not None:
+                event["description"] = wording
+        return events
+
+    async def _async_event_texts(self) -> dict[str, str]:
+        """Return the wording table, fetching it at most once per run.
+
+        A failure is cached as an empty table rather than retried on every
+        poll: the events still carry their code, timestamp and place, so a
+        missing table costs wording, not history. It is not per-parcel data —
+        one table serves every shipment.
+        """
+        if _event_texts_cache:
+            return _event_texts_cache[0]
+        table: dict[str, str] = {}
+        try:
+            async with self._session.get(
+                EKP_TEXTS_URL, headers=_EKP_HEADERS
+            ) as response:
+                if response.status == 200:
+                    payload = await response.json(content_type=None)
+                    section = (payload or {}).get(EKP_TEXTS_SECTION)
+                    if isinstance(section, dict):
+                        table = {
+                            key: value
+                            for key, value in section.items()
+                            if isinstance(value, str)
+                        }
+        except (aiohttp.ClientError, ValueError, AttributeError):
+            table = {}
+        if not table:
+            self._warn_texts_unavailable()
+        _event_texts_cache.append(table)
+        return table
+
+    @staticmethod
+    def _warn_texts_unavailable() -> None:
+        """Warn once that history entries will show a code instead of wording."""
+        if _texts_failure_logged:
+            return
+        _texts_failure_logged.add(True)
+        _LOGGER.warning(
+            "Swiss Post's event wording table could not be read, so history "
+            "entries show the carrier's own event code instead of a "
+            "description. Status and timestamps are unaffected."
+        )
 
     @staticmethod
     def _warn_history_unavailable(err: Exception) -> None:
@@ -348,47 +370,4 @@ class SwissPostApiClient:
             tracking_code,
         )
 
-    @staticmethod
-    def _warn_history_204(tracking_code: str, *, is_letter: bool = False) -> None:
-        """Warn once about a 204 from the history endpoint (a malformed request)."""
-        if is_letter:
-            _LOGGER.debug(
-                "No event timeline for letter %s (surface B carries parcels only)",
-                tracking_code,
-            )
-            return
-        if tracking_code in _history_204_logged:
-            return
-        _history_204_logged.add(tracking_code)
-        _LOGGER.warning(
-            "Swiss Post's event history endpoint answered 204 for %s. That means "
-            "it did not understand our request, not that the parcel is unknown — "
-            "the expected request format has probably changed. Please report it: "
-            "https://github.com/ha-parcel-integrations/ha-swiss-post/issues/new",
-            tracking_code,
-        )
 
-    @staticmethod
-    def _warn_history_null_data(tracking_code: str, *, is_letter: bool = False) -> None:
-        """Warn once about a 200 with a null ``Data`` from the history endpoint.
-
-        A silent-200 sibling of the 204 case: the endpoint didn't recognise
-        the request but answered with ``{"Data": null}`` instead of a 204.
-        """
-        if is_letter:
-            _LOGGER.debug(
-                "No event timeline for letter %s (surface B carries parcels only)",
-                tracking_code,
-            )
-            return
-        if tracking_code in _history_null_data_logged:
-            return
-        _history_null_data_logged.add(tracking_code)
-        _LOGGER.warning(
-            "Swiss Post's event history endpoint answered 200 with no data at "
-            "all for %s. That means it did not understand our request, not "
-            "that the parcel is unknown — the expected request format has "
-            "probably changed. Please report it: "
-            "https://github.com/ha-parcel-integrations/ha-swiss-post/issues/new",
-            tracking_code,
-        )

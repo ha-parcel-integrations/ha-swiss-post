@@ -7,7 +7,7 @@ when the payload shape turns out to differ from what we assumed, there is then
 exactly one place to fix.
 
 Two surfaces (see ``api.py``): ``shipment_*`` samples come from ekp-web and are
-what ``normalize_parcel`` maps; ``history_response`` is the postlogistics event
+what ``normalize_parcel`` maps; ``EVENTS`` is the shipment event
 timeline, whose ``History`` list ``api.py`` merges into the shipment's
 ``events``.
 """
@@ -17,44 +17,66 @@ ACTIVE_CODE = "990012345678901234"
 DELIVERED_CODE = "990098765432109876"
 
 
-def event(status: str, timestamp: str, description: str, event_id: int = 1) -> dict:
-    """One entry of Swiss Post's event timeline (surface B)."""
-    return {
-        "Id": event_id,
-        "Status": status,
-        "NextStatus": "",
-        "TimeStamp": timestamp,
-        "Description": description,
-        "FullDescription": "",
-        "GeoLocation": None,
-        "City": "",
+def event(
+    code: str,
+    timestamp: str,
+    *,
+    city: str | None = None,
+    detail: str | None = None,
+) -> dict:
+    """One entry of the shipment's event timeline, as the wire sends it.
+
+    The wire carries no wording at all — only a dotted ``eventCode``, a
+    timestamp and a place.
+    """
+    record = {
+        "shipmentNumber": DELIVERED_CODE,
+        "eventCode": code,
+        "timestamp": timestamp,
+        "zip": None,
+        "city": city,
+        "country": "CH",
+        "subEventId": None,
+        "subEventAdditionalInfo": None,
+        "eventCodeType": "INTERNAL",
+        "subEventDetailCode": detail,
+        "externalMetadata": {},
+        "flags": [],
+        "remarks": None,
+        "imageId": "",
+        "signatureId": "",
+        "signatureSigner": "",
+        "signatureDate": None,
     }
+    return record
 
 
-# The event vocabulary is near-constant in real data: "PST" on almost
-# everything, including the delivery itself. That is exactly why build_history
-# never maps it to a ParcelStatus.
+# Real codes from a captured delivered parcel, oldest first.
 EVENTS = [
-    event("PST", "2026-04-14T16:13:24Z", "Dateneinlieferung durch Aufgeber", 1),
-    event("PST", "2026-04-15T08:57:24Z", "Sortiert", 2),
-    event("PST", "2026-04-15T13:04:16Z", "Sortiert für die Zustellung", 3),
-    event("NTF", "2026-04-16T04:37:12Z", "Verlad Fahrzeug", 4),
-    event("PST", "2026-04-16T08:28:29Z", "Zugestellt an Domiziladresse", 5),
+    event("PARCEL.*.65.9299", "2026-04-14T16:13:24+02:00"),
+    event("PARCEL.*.65.1202", "2026-04-15T08:57:24+02:00", city="Härkingen"),
+    event("PARCEL.*.65.1201", "2026-04-15T13:04:16+02:00", city="Härkingen"),
+    event("PARCEL.*.65.1003", "2026-04-16T04:37:12+02:00"),
+    event("PARCEL.*.65.600", "2026-04-16T08:28:29+02:00"),
 ]
 
+# The wording table's own section, keyed exactly as Swiss Post keys it: a
+# product-specific entry, the ``ALL_PROD`` catch-all, the wildcard, and a
+# direction slot that is not always ``*``.
+EVENT_TEXTS = {
+    "PARCEL.*.ALL_PROD.9299.*": "The recipient has canceled an order",
+    "PARCEL.*.*.1202.*": "Shipment was sorted",
+    "PARCEL.*.ALL_PROD.1201.*": "Sorted for delivery",
+    "PARCEL.*.*.1003.*": "Loading into delivery vehicle",
+    "PARCEL.*.*.600.*": "Your shipment will shortly be handed over to the Swiss Post",
+    "PARCEL.*.*.815.IMPORT": "The consignment has left the border point",
+    "PARCEL.*.ALL_PROD.3600.*.4.1": "Reason: Deceased",
+}
 
-def history_response(code: str = DELIVERED_CODE, events: list | None = None) -> dict:
-    """A full surface-B response envelope."""
-    return {
-        "Type": 3,
-        "Data": [
-            {
-                "Identifier": code,
-                "DriveAndArrive": None,
-                "History": EVENTS if events is None else events,
-            }
-        ],
-    }
+
+def texts_response() -> dict:
+    """The wording table as the endpoint serves it."""
+    return {"shipment-text--": EVENT_TEXTS, "country-text--": {}}
 
 
 def delivered_sample(code: str = DELIVERED_CODE) -> dict:

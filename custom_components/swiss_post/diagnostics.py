@@ -44,6 +44,11 @@ TO_REDACT = {
     "signature",
     "proofOfDeliveryImageId",
     "imageReference",
+    # per-event proof material, on every timeline entry
+    "signatureId",
+    "signatureSigner",
+    "signatureDate",
+    "imageId",
     # Swiss Post payload fields — sender / billing identity
     "frankingLicense",
     "esrRefNo",

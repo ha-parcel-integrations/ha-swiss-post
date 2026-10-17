@@ -24,9 +24,9 @@ def reset_one_shot_warnings():
     from custom_components.swiss_post.tracking import api
 
     api._empty_result_logged.clear()
-    api._history_204_logged.clear()
-    api._history_null_data_logged.clear()
     api._history_failure_logged.clear()
+    api._texts_failure_logged.clear()
+    api._event_texts_cache.clear()
     parcels._warned_once.clear()
     yield
 

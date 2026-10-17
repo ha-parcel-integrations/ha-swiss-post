@@ -30,6 +30,7 @@ from custom_components.swiss_post.tracking.parcels import (
     is_letter_shipment,
     map_parcel_status,
     normalize_parcel,
+    resolve_event_text,
 )
 
 from .payloads import (
@@ -128,22 +129,21 @@ def test_format_dimensions_needs_all_three_axes():
 
 
 def test_build_history_orders_oldest_to_newest():
-    history = build_history(EVENTS)
+    history = build_history([dict(e, description=f"d{i}") for i, e in enumerate(EVENTS)])
     assert len(history) == 5
-    assert history[0]["raw_status"] == "Dateneinlieferung durch Aufgeber"
-    assert history[-1]["raw_status"] == "Zugestellt an Domiziladresse"
+    assert history[0]["raw_status"] == "d0"
+    assert history[-1]["raw_status"] == "d4"
 
 
-def test_build_history_never_maps_the_event_status():
-    """Surface B's ``Status`` is near-constant — four of five events on a real
-    delivered parcel read ``PST``, including the delivery itself. Mapping it
-    would file delivered parcels as in transit."""
+def test_build_history_never_maps_the_event_code():
+    """The per-event code vocabulary runs to thousands of values, so the
+    parcel's status comes from the shipment instead."""
     assert all(entry["status"] is None for entry in build_history(EVENTS))
 
 
 def test_build_history_caps_to_max_events():
     events = [
-        event("PST", f"2026-04-{day:02d}T10:00:00Z", "Sortiert", day)
+        event("PARCEL.*.65.1202", f"2026-04-{day:02d}T10:00:00+02:00")
         for day in range(1, 26)
     ]
     assert len(build_history(events, max_events=20)) == 20
@@ -158,16 +158,18 @@ def test_build_history_handles_missing_and_malformed():
 def test_build_history_keeps_unparseable_timestamp_last():
     history = build_history(
         [
-            event("PST", "2026-04-16T10:00:00Z", "fine"),
-            event("PST", "not-a-date", "odd"),
+            dict(event("PARCEL.*.65.1202", "2026-04-16T10:00:00+02:00"),
+                 description="fine"),
+            dict(event("PARCEL.*.65.1202", "not-a-date"), description="odd"),
         ]
     )
     assert [entry["raw_status"] for entry in history] == ["fine", "odd"]
 
 
 def test_build_history_falls_back_to_the_event_code_without_text():
-    history = build_history([event("NTF", "2026-04-16T10:00:00Z", "")])
-    assert history[0]["raw_status"] == "NTF"
+    """Without the wording table an entry still says which scan it was."""
+    history = build_history([event("PARCEL.*.65.1003", "2026-04-16T10:00:00+02:00")])
+    assert history[0]["raw_status"] == "PARCEL.*.65.1003"
 
 
 # ---------------------------------------------------------------------------
@@ -378,8 +380,8 @@ def test_normalize_history_is_opt_in():
     assert normalize_parcel(raw)["history"] is None
     history = normalize_parcel(raw, include_history=True)["history"]
     assert len(history) == 5
-    # UTC event stamps are normalised like every other timestamp.
-    assert history[-1]["timestamp"] == "2026-04-16T08:28:29+00:00"
+    # The events carry their own offset, which is kept as sent.
+    assert history[-1]["timestamp"] == "2026-04-16T08:28:29+02:00"
 
 
 def test_normalize_falls_back_to_the_global_status_without_a_product_code():
@@ -469,3 +471,59 @@ def test_capabilities_are_known_values():
 def test_capabilities_cover_every_known_field():
     """Swiss Post's merged two-host payload is the one carrier that fills all six."""
     assert CAPABILITIES == KNOWN_CAPABILITIES
+
+
+# ---------------------------------------------------------------------------
+# resolve_event_text
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_event_text_prefers_the_product_specific_entry():
+    texts = {
+        "PARCEL.*.65.1003.*": "Product wording",
+        "PARCEL.*.ALL_PROD.1003.*": "Catch-all wording",
+        "PARCEL.*.*.1003.*": "Wildcard wording",
+    }
+    assert resolve_event_text(texts, {"eventCode": "PARCEL.*.65.1003"}) == (
+        "Product wording"
+    )
+
+
+def test_resolve_event_text_falls_through_to_the_catch_all_then_wildcard():
+    event_code = {"eventCode": "PARCEL.*.65.1003"}
+    assert resolve_event_text(
+        {"PARCEL.*.ALL_PROD.1003.*": "Catch-all"}, event_code
+    ) == "Catch-all"
+    assert resolve_event_text({"PARCEL.*.*.1003.*": "Wildcard"}, event_code) == (
+        "Wildcard"
+    )
+
+
+def test_resolve_event_text_tries_the_direction_slot():
+    """Code 815 only exists under IMPORT/EXPORT, never under the wildcard."""
+    texts = {"PARCEL.*.*.815.IMPORT": "The consignment has left the border point"}
+    assert resolve_event_text(texts, {"eventCode": "PARCEL.*.2.815"}) == (
+        "The consignment has left the border point"
+    )
+
+
+def test_resolve_event_text_prefers_a_sub_event_variant():
+    texts = {
+        "PARCEL.*.*.3600.*": "Undeliverable",
+        "PARCEL.*.*.3600.*.4.1": "Reason: Deceased",
+    }
+    event_record = {
+        "eventCode": "PARCEL.*.65.3600",
+        "subEventDetailCode": "4",
+        "subEventId": "1",
+    }
+    assert resolve_event_text(texts, event_record) == "Reason: Deceased"
+
+
+def test_resolve_event_text_returns_none_on_anything_it_cannot_key():
+    assert resolve_event_text({}, {"eventCode": "PARCEL.*.65.1003"}) is None
+    assert resolve_event_text(None, {"eventCode": "PARCEL.*.65.1003"}) is None
+    assert resolve_event_text({"a": "b"}, "not a dict") is None
+    assert resolve_event_text({"a": "b"}, {"eventCode": None}) is None
+    assert resolve_event_text({"a": "b"}, {"eventCode": "PARCEL.65"}) is None
+    assert resolve_event_text({"PARCEL.*.*.1.*": ""}, {"eventCode": "P.*.*.1"}) is None

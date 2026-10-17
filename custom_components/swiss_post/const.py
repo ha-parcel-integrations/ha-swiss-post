@@ -79,15 +79,27 @@ BROWSER_USER_AGENT = (
     "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 )
 
-# --- Surface B: the event timeline ------------------------------------------
-EOS_HISTORY_URL = "https://eosapi.postlogistics.ch/api/trackandtrace/public"
-EOS_ORIGIN = "https://tracking.postlogistics.ch"
+# --- The event timeline, on the same host -----------------------------------
+# Keyed on the shipment's own ``identity`` from the search result, on the same
+# anonymous session as the lookup. The timeline used to be fetched from a
+# second host (``eosapi.postlogistics.ch``), which now answers a server-level
+# 404 for every input — that host belongs to Swiss Post's freight arm and has
+# moved to ``swisspost-cargo.com``, where an ordinary consumer parcel only
+# comes back as a thin relay that never reads as delivered. This endpoint is
+# the tracker's own, and serves the full timeline.
+EKP_EVENTS_URL = "https://service.post.ch/ekp-web/api/shipment/id/{identity}/events"
 
-# Language of the event descriptions (``de-DE``, ``fr-FR``, ``it-IT``, …).
-# Swiss Post writes them in the parcel's own language, not the reader's, and
-# German is the majority language in the delivery area — but the value is only
-# ever shown as free text on a history entry, so a wrong guess is cosmetic.
-EOS_CULTURE = "de-DE"
+# The events carry no wording at all — only a dotted ``eventCode``, a
+# timestamp and a place. Swiss Post's own tracker resolves the wording against
+# this table, which is keyless, ~130 KB, and the same for every parcel, so it
+# is fetched once per Home Assistant run and cached.
+EKP_TEXTS_URL = (
+    "https://service.post.ch/ekp-web/core/rest/translations/en/"
+    "shipment-text-messages"
+)
+
+# The section of that table holding the per-event wording.
+EKP_TEXTS_SECTION = "shipment-text--"
 
 # Human-facing deep link surfaced on each parcel's ``url`` field: the same
 # search page the ekp-web API sits behind.

@@ -112,7 +112,7 @@ Open **Configure** on the integration entry:
 |---|---|---|---|
 | Parcels | Add / remove | — | Manage the tracked tracking codes. Changes apply immediately, no restart. **Tracking-code hubs only** — an account hub discovers its own parcels. |
 | Delivered parcels | Filter by / amount | last 7 days | How long delivered parcels stay visible on the delivered sensor. |
-| Parcel history | Include status history | off | **Tracking-code hubs only.** Adds a `history` attribute per parcel with each status update. Swiss Post serves the timeline from a second endpoint, so this costs one extra request per parcel per poll. Registered **letters** are tracked normally but have no timeline on that endpoint, so their `history` stays empty. |
+| Parcel history | Include status history | off | **Tracking-code hubs only.** Adds a `history` attribute per parcel with each status update. Swiss Post serves the timeline from a separate call, so this costs one extra request per parcel per poll, plus one small request per Home Assistant restart for the wording Swiss Post gives each scan. Registered **letters** have a timeline too. |
 | Parcel details | Include weight, size and status history | off | **Account hubs only.** The inbox only lists your parcels — their weight, size and status timeline need a separate lookup per parcel, so this costs one extra request per parcel per poll. With it off, `weight`, `dimensions` and `history` stay empty on an account parcel. |
 
 ## Dynamic polling

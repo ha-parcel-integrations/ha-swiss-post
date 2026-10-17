@@ -75,30 +75,77 @@ def map_parcel_status(code: str | None) -> ParcelStatus:
     return ParcelStatus.UNKNOWN
 
 
+# The direction slot that closes a wording key. Swiss Post does not expose a
+# shipment's direction, and the codes that key on it word every direction the
+# same, so each is tried in turn rather than derived.
+_TEXT_DIRECTIONS = ("*", "INLAND", "IMPORT", "EXPORT")
+
+
+def resolve_event_text(texts: dict | None, event: dict) -> str | None:
+    """Return an event's wording from Swiss Post's own table, or ``None``.
+
+    An ``eventCode`` is ``KIND.*.PRODUCT.CODE`` (``PARCEL.*.65.1003``), and the
+    table keys that spell. a product-specific entry, the catch-all
+    ``ALL_PROD``, and the wildcard are tried in that order, each closed by a
+    direction slot. A sub-event narrows the key further — those are the
+    "Reason: …" variants — so it is tried ahead of the plain code.
+    """
+    if not texts or not isinstance(event, dict):
+        return None
+    code = event.get("eventCode")
+    if not isinstance(code, str):
+        return None
+    parts = code.split(".")
+    if len(parts) < 4:
+        return None
+    kind, product, number = parts[0], parts[2], parts[3]
+
+    suffixes = [""]
+    detail = [
+        str(value)
+        for value in (event.get("subEventDetailCode"), event.get("subEventId"))
+        if value not in (None, "")
+    ]
+    if detail:
+        suffixes.insert(0, "." + ".".join(detail))
+
+    for candidate_product in (product, "ALL_PROD", "*"):
+        for suffix in suffixes:
+            for direction in _TEXT_DIRECTIONS:
+                wording = texts.get(
+                    f"{kind}.*.{candidate_product}.{number}.{direction}{suffix}"
+                )
+                if isinstance(wording, str) and wording:
+                    return wording
+    return None
+
+
 def build_history(
     events: list | None, *, max_events: int = HISTORY_MAX_EVENTS
 ) -> list[dict]:
-    """Build the canonical ``history`` list from surface B's ``History`` list.
+    """Build the canonical ``history`` list from the shipment's event list.
 
-    Each entry is ``{timestamp, status, raw_status}``. The per-event ``Status``
-    is deliberately **not** mapped: on a real delivered parcel four of five
-    events carried the same ``PST`` value — including the delivery itself — so
-    it is not a status vocabulary. Every entry keeps ``status: null`` and the
-    human-readable ``Description`` as ``raw_status``. Sorted oldest → newest and
-    capped to the most recent ``max_events``.
+    Each entry is ``{timestamp, status, raw_status}``. ``raw_status`` is the
+    event's resolved wording, falling back to its own ``eventCode`` when the
+    wording table could not be read — a code is poor reading but better than
+    an entry with nothing on it. Every entry keeps ``status: null``: the
+    parcel's canonical status comes from the shipment's ``globalStatus``, and
+    the per-event code vocabulary runs to thousands of values, so mapping it
+    would be guesswork. Sorted oldest → newest and capped to the most recent
+    ``max_events``.
     """
     parseable: list[tuple[datetime, dict]] = []
     unparseable: list[dict] = []
     for event in events or []:
         if not isinstance(event, dict):
             continue
-        timestamp = to_iso_timestamp(event.get("TimeStamp"))
+        timestamp = to_iso_timestamp(event.get("timestamp"))
         if not timestamp:
             continue
         entry = {
             "timestamp": timestamp,
             "status": None,
-            "raw_status": event.get("Description") or event.get("Status"),
+            "raw_status": event.get("description") or event.get("eventCode"),
         }
         parsed = parse_iso(timestamp)
         if parsed is None:

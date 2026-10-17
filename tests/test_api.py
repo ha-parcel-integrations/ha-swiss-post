@@ -19,12 +19,10 @@ from custom_components.swiss_post.tracking.api import (
 )
 
 from .payloads import (
-    ACTIVE_CODE,
     DELIVERED_CODE,
     EVENTS,
     delivered_sample,
-    history_response,
-    letter_sample,
+    texts_response,
 )
 
 USER_ID = "<[anonymous]>b31beee6-0000-0000-0000-000000000000"
@@ -77,9 +75,9 @@ def _lookup_session(shipments: list, *, digest: str = DIGEST) -> MagicMock:
 def _reset_one_shot_logs():
     """Clear the module's one-shot log sets between tests."""
     api_module._empty_result_logged.clear()
-    api_module._history_204_logged.clear()
-    api_module._history_null_data_logged.clear()
     api_module._history_failure_logged.clear()
+    api_module._texts_failure_logged.clear()
+    api_module._event_texts_cache.clear()
     yield
 
 
@@ -285,151 +283,143 @@ async def test_a_second_403_gives_up_rather_than_looping():
 
 
 # ---------------------------------------------------------------------------
-# surface B — the event timeline
+# the event timeline
 # ---------------------------------------------------------------------------
 
+IDENTITY = "pVSH-9larLjLuT-wFqqBAq"
 
-def _history_client(history_ctx) -> tuple[SwissPostApiClient, MagicMock]:
-    session = _session(
-        gets=[_user_response(), _response(200, [delivered_sample()])],
-        posts=[_response(200, {"hash": DIGEST}), history_ctx],
-    )
+
+def _history_client(events_ctx, texts_ctx=None) -> tuple[SwissPostApiClient, MagicMock]:
+    """A client whose lookup resolves, then answers the events and texts GETs."""
+    gets = [
+        _user_response(),
+        _response(200, [delivered_sample()]),
+        events_ctx,
+    ]
+    gets.append(texts_ctx or _response(200, texts_response()))
+    session = _session(gets=gets, posts=[_response(200, {"hash": DIGEST})])
     return SwissPostApiClient(session), session
 
 
 async def test_history_is_only_fetched_when_asked_for():
-    client, session = _history_client(_response(200, history_response()))
+    client, session = _history_client(_response(200, EVENTS))
 
     parcel = await client.async_get_parcel(DELIVERED_CODE)
 
-    assert parcel["events"] == []  # surface A's own, always-empty array
-    assert len(session.post.call_args_list) == 1  # registration only
+    assert parcel["events"] == []  # the shipment's own, always-empty array
+    # user + search read only: no events call, no wording table
+    assert len(session.get.call_args_list) == 2
 
 
 async def test_history_is_merged_into_the_shipment():
-    client, session = _history_client(_response(200, history_response()))
+    client, session = _history_client(_response(200, EVENTS))
 
     parcel = await client.async_get_parcel(DELIVERED_CODE, include_history=True)
 
-    assert parcel["events"] == EVENTS
-    # Singular, capitalised "Identifier" — the plural spelling is ignored with
-    # a 204 rather than rejected.
-    assert session.post.call_args.kwargs["json"] == {"Identifier": DELIVERED_CODE}
-    assert session.post.call_args.kwargs["params"] == {"culture": "de-DE"}
+    assert len(parcel["events"]) == len(EVENTS)
+    # Keyed on the shipment's own identity, not on the tracking code.
+    events_url = session.get.call_args_list[2].args[0]
+    assert events_url.endswith(f"/shipment/id/{delivered_sample()['identity']}/events")
 
 
-async def test_history_204_is_a_malformed_request_not_an_unknown_parcel(caplog):
-    client, _ = _history_client(_response(204))
+async def test_each_event_gains_its_resolved_wording():
+    client, _ = _history_client(_response(200, EVENTS))
 
     parcel = await client.async_get_parcel(DELIVERED_CODE, include_history=True)
 
-    assert parcel["events"] == []
-    assert "did not understand our request" in caplog.text
-    assert "issues/new" in caplog.text
+    assert [event["description"] for event in parcel["events"]] == [
+        "The recipient has canceled an order",
+        "Shipment was sorted",
+        "Sorted for delivery",
+        "Loading into delivery vehicle",
+        "Your shipment will shortly be handed over to the Swiss Post",
+    ]
 
 
-async def test_history_204_warns_only_once(caplog):
-    session = _session(gets=[], posts=[_response(204), _response(204)])
-    client = SwissPostApiClient(session)
-
-    await client.async_get_history(DELIVERED_CODE)
-    await client.async_get_history(DELIVERED_CODE)
-
-    assert caplog.text.count("did not understand our request") == 1
-
-
-async def test_a_letter_without_a_timeline_is_not_an_alarm(caplog):
-    """Surface B is a parcel-logistics host: it answers ``{"Data": null}`` for
-    letter post, which is normal and used to be reported as a broken request."""
+async def test_the_wording_table_is_fetched_once_not_once_per_parcel():
     session = _session(
-        gets=[_user_response(), _response(200, [letter_sample()])],
-        posts=[
-            _response(200, {"hash": DIGEST}),
-            _response(200, {"Type": 3, "Data": None}),
+        gets=[
+            _user_response(),
+            _response(200, [delivered_sample()]),
+            _response(200, EVENTS),
+            _response(200, texts_response()),
+            _response(200, [delivered_sample()]),
+            _response(200, EVENTS),
         ],
+        posts=[_response(200, {"hash": DIGEST}), _response(200, {"hash": DIGEST})],
     )
-
-    parcel = await SwissPostApiClient(session).async_get_parcel(
-        ACTIVE_CODE, include_history=True
-    )
-
-    assert parcel["events"] == []
-    assert "did not understand our request" not in caplog.text
-
-
-async def test_a_letter_answered_with_204_is_not_an_alarm_either(caplog):
-    client = SwissPostApiClient(_session(gets=[], posts=[_response(204)]))
-
-    assert await client.async_get_history(ACTIVE_CODE, is_letter=True) is None
-    assert "did not understand our request" not in caplog.text
-
-
-async def test_a_parcel_without_a_timeline_is_still_an_alarm(caplog):
-    client, _ = _history_client(_response(200, {"Type": 3, "Data": None}))
+    client = SwissPostApiClient(session)
 
     await client.async_get_parcel(DELIVERED_CODE, include_history=True)
+    second = await client.async_get_parcel(DELIVERED_CODE, include_history=True)
 
-    assert "did not understand our request" in caplog.text
-
-
-@pytest.mark.parametrize(
-    "body,expected",
-    [
-        ({"Type": 3, "Data": []}, []),
-        ({"Type": 3, "Data": [{"Identifier": DELIVERED_CODE}]}, []),
-        ({"Type": 3, "Data": [{"History": None}]}, []),
-    ],
-)
-async def test_history_tolerates_thin_envelopes(body, expected):
-    client = SwissPostApiClient(_session(gets=[], posts=[_response(200, body)]))
-    assert await client.async_get_history(DELIVERED_CODE) == expected
+    # Six reads, not seven: the table is not fetched a second time.
+    assert len(session.get.call_args_list) == 6
+    assert second["events"][0]["description"] == "The recipient has canceled an order"
 
 
-async def test_history_null_data_is_a_malformed_request_not_an_unknown_parcel(
-    caplog,
-):
-    """A silent-200 sibling of the 204 case: {"Data": null} instead of 204."""
-    client = SwissPostApiClient(
-        _session(gets=[], posts=[_response(200, {"Type": 3, "Data": None})])
-    )
+async def test_an_unreadable_wording_table_leaves_the_code_as_the_wording(caplog):
+    client, _ = _history_client(_response(200, EVENTS), _response(500))
 
-    events = await client.async_get_history(DELIVERED_CODE)
+    parcel = await client.async_get_parcel(DELIVERED_CODE, include_history=True)
 
-    assert events == []
-    assert "did not understand our request" in caplog.text
-    assert "issues/new" in caplog.text
+    assert "description" not in parcel["events"][0]
+    assert len(parcel["events"]) == len(EVENTS)
+    assert "wording table could not be read" in caplog.text
 
 
-async def test_history_null_data_warns_only_once(caplog):
+async def test_an_unreadable_wording_table_is_reported_once(caplog):
     session = _session(
-        gets=[],
-        posts=[
-            _response(200, {"Type": 3, "Data": None}),
-            _response(200, {"Type": 3, "Data": None}),
+        gets=[
+            _user_response(),
+            _response(200, [delivered_sample()]),
+            _response(200, EVENTS),
+            _response(500),
+            _response(200, [delivered_sample()]),
+            _response(200, EVENTS),
         ],
+        posts=[_response(200, {"hash": DIGEST}), _response(200, {"hash": DIGEST})],
     )
     client = SwissPostApiClient(session)
 
-    await client.async_get_history(DELIVERED_CODE)
-    await client.async_get_history(DELIVERED_CODE)
+    await client.async_get_parcel(DELIVERED_CODE, include_history=True)
+    await client.async_get_parcel(DELIVERED_CODE, include_history=True)
 
-    assert caplog.text.count("did not understand our request") == 1
+    assert caplog.text.count("wording table could not be read") == 1
+
+
+async def test_an_empty_timeline_skips_the_wording_table():
+    client, session = _history_client(_response(200, []))
+
+    parcel = await client.async_get_parcel(DELIVERED_CODE, include_history=True)
+
+    assert parcel["events"] == []
+    # user + search + events, and no table: there is nothing to word.
+    assert len(session.get.call_args_list) == 3
 
 
 @pytest.mark.parametrize(
     "response,expected",
     [
-        (_response(500), "HTTP 500"),
+        (_response(404), "HTTP 404"),
         (_response(200, "not json"), "unparseable history"),
-        (_response(200, ["not", "a", "dict"]), "not a JSON object"),
-        (_response(200, {"Data": ["not a dict"]}), "not a JSON object"),
+        (_response(200, {"Data": []}), "not a JSON list"),
     ],
 )
 async def test_history_raises_on_unexpected_responses(response, expected):
-    client = SwissPostApiClient(_session(gets=[], posts=[response]))
-    with pytest.raises(SwissPostApiError) as err:
-        await client.async_get_history(DELIVERED_CODE)
-    assert expected in str(err.value)
+    client = SwissPostApiClient(_session(gets=[response], posts=[]))
+    with pytest.raises(SwissPostApiError, match=expected):
+        await client.async_get_history(IDENTITY)
+
+
+async def test_a_non_object_event_is_dropped_rather_than_raising():
+    client = SwissPostApiClient(
+        _session(gets=[_response(200, ["nope", EVENTS[0]]), _response(200, texts_response())], posts=[])
+    )
+
+    events = await client.async_get_history(IDENTITY)
+
+    assert len(events) == 1
 
 
 def test_a_broken_history_is_reported_once_not_once_per_parcel(caplog):
