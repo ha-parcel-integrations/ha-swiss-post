@@ -79,6 +79,7 @@ def _reset_one_shot_logs():
     api_module._empty_result_logged.clear()
     api_module._history_204_logged.clear()
     api_module._history_null_data_logged.clear()
+    api_module._history_failure_logged.clear()
     yield
 
 
@@ -431,6 +432,17 @@ async def test_history_raises_on_unexpected_responses(response, expected):
     assert expected in str(err.value)
 
 
+def test_a_broken_history_is_reported_once_not_once_per_parcel(caplog):
+    """The route being down must not put a line in the log for every parcel."""
+    warn = api_module.SwissPostApiClient._warn_history_unavailable
+    detail = "HTTP 404 from the event history endpoint"
+
+    warn(api_module.SwissPostApiError(detail))
+    warn(api_module.SwissPostApiError(detail))
+
+    assert caplog.text.count("event history is unavailable") == 1
+
+
 async def test_a_broken_history_never_fails_the_parcel(caplog):
     """The timeline is a nice-to-have; the status is not."""
     client, _ = _history_client(_response(500))
@@ -439,4 +451,7 @@ async def test_a_broken_history_never_fails_the_parcel(caplog):
 
     assert parcel["shipmentNumber"] == DELIVERED_CODE
     assert parcel["events"] == []
-    assert "event history unavailable" in caplog.text
+    assert "event history is unavailable" in caplog.text
+    # Keyed on the failure, so a route that is down for every parcel does not
+    # put a line in the log for each one on every poll.
+    assert DELIVERED_CODE not in caplog.text

@@ -70,6 +70,17 @@ always empty; `eosapi.postlogistics.ch` has the event timeline and no usable
 status vocabulary. `tracking/api.py` merges the second into the first's `events` key, so
 `tracking/parcels.py` only ever sees one payload shape.
 
+**⚠️ The timeline host answers a server-level 404 as of 2026-10-17.**
+`POST eosapi.postlogistics.ch/api/trackandtrace/public` returns an IIS
+`text/html` "Not Found" page — identical for a real tracking number, a bogus
+one and an empty body — so the route itself is gone rather than any parcel
+being unknown to it. Twenty-four real codes were tried; the status host is
+unaffected and every parcel still resolves, just without a timeline. The
+failure is handled where it happens: `_warn_history_unavailable` reports one
+line per distinct failure per HA session instead of one per parcel per poll,
+and carries no tracking code. Before changing anything here, re-probe — if
+Swiss Post has moved the route, the fix is the URL, not the mapping.
+
 **The history option controls the call count, not just an attribute.** Two
 requests per parcel per poll with history off, three with it on. That is why
 `include_history` is passed down into `async_get_parcel` instead of being

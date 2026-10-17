@@ -26,6 +26,7 @@ def reset_one_shot_warnings():
     api._empty_result_logged.clear()
     api._history_204_logged.clear()
     api._history_null_data_logged.clear()
+    api._history_failure_logged.clear()
     parcels._warned_once.clear()
     yield
 

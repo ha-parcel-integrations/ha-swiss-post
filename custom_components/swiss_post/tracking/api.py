@@ -54,6 +54,10 @@ _EOS_HEADERS = {
 # Tracking codes we have already reported as empty, or as a malformed history
 # request, so each is logged once per HA session instead of on every poll.
 _empty_result_logged: set[str] = set()
+
+# Distinct event-history failures already reported, so a route that is down
+# for every parcel costs one log line per HA session, not one per poll.
+_history_failure_logged: set[str] = set()
 _history_204_logged: set[str] = set()
 _history_null_data_logged: set[str] = set()
 
@@ -256,11 +260,10 @@ class SwissPostApiClient:
                     or []
                 )
             except (SwissPostApiError, aiohttp.ClientError) as err:
-                _LOGGER.warning(
-                    "Swiss Post event history unavailable for %s: %s",
-                    tracking_code,
-                    err,
-                )
+                # Keyed on the failure, not the code: when the timeline route
+                # is down it fails for every parcel on every poll, and one
+                # line per parcel per poll buries the rest of the log.
+                self._warn_history_unavailable(err)
                 parcel["events"] = []
 
         return parcel
@@ -318,6 +321,19 @@ class SwissPostApiClient:
             raise SwissPostApiError("unexpected history entry (not a JSON object)")
         events = first.get("History")
         return events if isinstance(events, list) else []
+
+    @staticmethod
+    def _warn_history_unavailable(err: Exception) -> None:
+        """Warn once per distinct event-history failure, not once per parcel."""
+        reason = str(err)
+        if reason in _history_failure_logged:
+            return
+        _history_failure_logged.add(reason)
+        _LOGGER.warning(
+            "Swiss Post event history is unavailable, so parcels show their "
+            "current status without a timeline: %s",
+            reason,
+        )
 
     @staticmethod
     def _warn_empty_result(tracking_code: str) -> None:
