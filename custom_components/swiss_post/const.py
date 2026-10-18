@@ -72,13 +72,6 @@ EKP_REFERER = "https://service.post.ch/ekp-web/ui/"
 # it through the response headers rather than a plain dict built from them.
 CSRF_HEADER = "X-CSRF-TOKEN"
 
-# The endpoint answers a plain HA user agent, but it is a consumer web API and
-# a browser-shaped request is the traffic it expects to see.
-BROWSER_USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-)
-
 # --- The event timeline, on the same host -----------------------------------
 # Keyed on the shipment's own ``identity`` from the search result, on the same
 # anonymous session as the lookup. The timeline used to be fetched from a

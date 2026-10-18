@@ -27,7 +27,6 @@ from urllib.parse import quote
 import aiohttp
 
 from ..const import (
-    BROWSER_USER_AGENT,
     CSRF_HEADER,
     EKP_EVENTS_URL,
     EKP_HISTORY_ITEM_URL,
@@ -42,7 +41,6 @@ from .parcels import resolve_event_text
 _LOGGER = logging.getLogger(__name__)
 
 _EKP_HEADERS = {
-    "User-Agent": BROWSER_USER_AGENT,
     "Referer": EKP_REFERER,
 }
 

@@ -95,9 +95,9 @@ async def test_establish_keeps_user_id_and_token():
 
     assert tracking_session.established is True
     assert session.get.call_args[0][0].endswith("/api/user")
-    # A browser-shaped request: the endpoint is a consumer web API.
+    # The endpoint answers HA's own User-Agent, so none is spoofed.
     headers = session.get.call_args.kwargs["headers"]
-    assert "Mozilla" in headers["User-Agent"]
+    assert "User-Agent" not in headers
     assert headers["Referer"].startswith("https://service.post.ch/")
 
 
