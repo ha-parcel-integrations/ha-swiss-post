@@ -5,6 +5,8 @@
 [![HACS](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/integration)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+> 📦 Part of [**ha-parcel-integrations**](https://ha-parcel-integrations.github.io/), a family of package-tracking integrations for Home Assistant that all publish the same parcel format, statuses and events, so they plug into cross-carrier automations and the optional [Parcel Aggregator](https://github.com/ha-parcel-integrations/ha-parcel-aggregator). Browse the other carriers on the website.
+>
 > 💬 Questions or feedback? Join the discussion on the [Home Assistant community](https://community.home-assistant.io/t/packages-postnl-dhl-nl-dpd-and-gls-parcel-integration/112433/).
 
 A custom Home Assistant integration that tracks your [Swiss Post](https://www.post.ch) parcels in Switzerland. No API key is needed. Pick either of two sources at setup:
@@ -15,8 +17,6 @@ A custom Home Assistant integration that tracks your [Swiss Post](https://www.po
 You can run both side by side (one hub each) if you want codes for parcels that aren't linked to your account.
 
 > **Parcels from abroad.** Cross-border parcels are customs-cleared and often handed over by a foreign carrier, so Swiss Post only sees them from the moment they enter its network. Such a parcel can stay `unknown` for a while and then appear mid-journey — that is Swiss Post's view of it, not a fault in the integration.
-
-Part of the [ha-parcel-integrations](https://ha-parcel-integrations.github.io/) family: it publishes the same canonical parcel format, statuses and events as the other carrier integrations, so it plugs straight into the [Parcel Aggregator](https://github.com/ha-parcel-integrations/ha-parcel-aggregator) and cross-carrier automations.
 
 ## Contents
 
