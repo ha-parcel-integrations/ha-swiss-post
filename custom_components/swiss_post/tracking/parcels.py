@@ -187,9 +187,10 @@ def _dimensions_cm(properties: dict) -> dict[str, Any] | None:
     labels differ.
     """
     values = [_mm_to_cm(properties.get(f"dimension{index}")) for index in (1, 2, 3)]
-    if any(value is None for value in values):
+    present = [value for value in values if value is not None]
+    if len(present) != len(values):
         return None
-    height, width, length = sorted(values)
+    height, width, length = sorted(present)
     return format_dimensions(length, width, height)
 
 

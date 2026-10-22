@@ -12,6 +12,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from . import SwissPostConfigEntry
+from .account.coordinator import SwissPostAccountCoordinator
 from .device import ATTRIBUTION, build_device_info
 from .parcels import parse_iso
 from .tracking.coordinator import SwissPostCoordinator
@@ -19,6 +20,8 @@ from .tracking.coordinator import SwissPostCoordinator
 PARALLEL_UPDATES = 0
 
 _DEFAULT_EVENT_DURATION = timedelta(hours=1)
+
+_Coordinator = SwissPostCoordinator | SwissPostAccountCoordinator
 
 
 async def async_setup_entry(
@@ -32,9 +35,7 @@ async def async_setup_entry(
     )
 
 
-class SwissPostDeliveriesCalendar(
-    CoordinatorEntity[SwissPostCoordinator], CalendarEntity
-):
+class SwissPostDeliveriesCalendar(CoordinatorEntity[_Coordinator], CalendarEntity):
     """A read-only calendar of expected Swiss Post deliveries.
 
     Each active tracked parcel with a known delivery moment becomes an event.
@@ -46,7 +47,7 @@ class SwissPostDeliveriesCalendar(
     _attr_translation_key = "deliveries"
     _attr_attribution = ATTRIBUTION
 
-    def __init__(self, coordinator: SwissPostCoordinator, entry: ConfigEntry) -> None:
+    def __init__(self, coordinator: _Coordinator, entry: ConfigEntry) -> None:
         """Initialize the calendar."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_deliveries"

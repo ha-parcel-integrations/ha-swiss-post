@@ -49,6 +49,8 @@ _LOGGER = logging.getLogger(__name__)
 class SwissPostAccountCoordinator(DataUpdateCoordinator[dict[str, list[dict]]]):
     """Refresh the whole account inbox on a steady cadence."""
 
+    config_entry: ConfigEntry
+
     def __init__(
         self,
         hass: HomeAssistant,

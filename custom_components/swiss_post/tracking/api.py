@@ -163,6 +163,8 @@ class SwissPostSession:
         """Run the two-call lookup on the current session."""
         # Passed as a query parameter so aiohttp URL-encodes it, which matters
         # here: the anonymous user id literally starts with "<[anonymous]>".
+        if self._user_identifier is None or self._csrf_token is None:
+            raise SwissPostSessionExpired
         params = {"userId": self._user_identifier}
 
         async with self._session.post(

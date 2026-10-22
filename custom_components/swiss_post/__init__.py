@@ -64,15 +64,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: SwissPostConfigEntry) ->
                 },
             )
 
-        client: SwissPostApiClient | SwissPostAccountClient = SwissPostAccountClient(
+        client: SwissPostApiClient | SwissPostAccountClient
+        account_client = SwissPostAccountClient(
             async_get_clientsession(hass),
             id_token=entry.data.get(CONF_ID_TOKEN),
             refresh_token=entry.data.get(CONF_REFRESH_TOKEN),
             device_id=entry.data.get(CONF_DEVICE_ID),
             token_callback=async_store_tokens,
         )
+        client = account_client
         coordinator: SwissPostCoordinator | SwissPostAccountCoordinator = (
-            SwissPostAccountCoordinator(hass, client, entry)
+            SwissPostAccountCoordinator(hass, account_client, entry)
         )
     else:
         # Swiss Post tracking is public — no credentials — but the ekp-web
@@ -81,8 +83,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: SwissPostConfigEntry) ->
         # shared one the cookie jar is shared too, and the Swiss Post cookie
         # would ride along on every other integration's requests.
         # ``async_create_clientsession`` closes it again when this entry unloads.
-        client = SwissPostApiClient(async_create_clientsession(hass))
-        coordinator = SwissPostCoordinator(hass, client, entry)
+        tracking_client = SwissPostApiClient(async_create_clientsession(hass))
+        coordinator = SwissPostCoordinator(hass, tracking_client, entry)
+        client = tracking_client
 
     # Fetch initial data here, before forwarding to platforms. Raising
     # ConfigEntryNotReady from a forwarded platform is too late for HA to catch
