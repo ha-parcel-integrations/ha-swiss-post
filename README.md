@@ -77,7 +77,12 @@ For the **SwissID account** source:
 ### HACS (recommended)
 
 1. Open HACS and search for **Swiss Post**.
-2. Install it and restart Home Assistant.
+2. Install it.
+3. Restart Home Assistant if HACS asks you to.
+
+Or click the button below to open it directly in HACS:
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ha-parcel-integrations&repository=ha-swiss-post&category=integration)
 
 ### Manual
 
@@ -85,7 +90,9 @@ Copy `custom_components/swiss_post` into your `config/custom_components/` folder
 
 ## Configuration
 
-Add the integration via **Settings → Devices & Services → Add Integration → Swiss Post**, then pick a source.
+[![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=swiss_post)
+
+Or set it up by hand: add the integration via **Settings → Devices & Services → Add Integration → Swiss Post**, then pick a source.
 
 ### Tracking codes
 
