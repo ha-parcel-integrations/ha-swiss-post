@@ -11,6 +11,7 @@ what ``normalize_parcel`` maps; ``EVENTS`` is the shipment event
 timeline, whose ``History`` list ``api.py`` merges into the shipment's
 ``events``.
 """
+
 from __future__ import annotations
 
 ACTIVE_CODE = "990012345678901234"
@@ -29,7 +30,7 @@ def event(
     The wire carries no wording at all — only a dotted ``eventCode``, a
     timestamp and a place.
     """
-    record = {
+    return {
         "shipmentNumber": DELIVERED_CODE,
         "eventCode": code,
         "timestamp": timestamp,
@@ -48,7 +49,6 @@ def event(
         "signatureSigner": "",
         "signatureDate": None,
     }
-    return record
 
 
 # Real codes from a captured delivered parcel, oldest first.

@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import logging
 import re
-import uuid
 from typing import Any
 from urllib.parse import parse_qs, urlparse
+import uuid
 
-import voluptuous as vol
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
@@ -18,6 +17,7 @@ from homeassistant.config_entries import (
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+import voluptuous as vol
 
 from .account.client import (
     SwissPostAccountApiError,
@@ -245,9 +245,7 @@ class SwissPostConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return self._async_authorize_form(SOURCE_ACCOUNT, errors)
 
-    async def async_step_reauth(
-        self, entry_data: dict[str, Any]
-    ) -> ConfigFlowResult:
+    async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
         """Start reauthentication for the account whose refresh chain died."""
         self._reauth_entry = self._get_reauth_entry()
         self._device_id = entry_data.get(CONF_DEVICE_ID) or str(uuid.uuid4())

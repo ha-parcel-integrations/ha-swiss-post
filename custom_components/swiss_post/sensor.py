@@ -1,8 +1,9 @@
 """Sensor platform for the Swiss Post parcel tracker integration."""
+
 from __future__ import annotations
 
-import logging
 from datetime import datetime
+import logging
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -34,7 +35,7 @@ def _bucket(coordinator: Any, name: str) -> list[dict]:
     """Read one parcel bucket, working across both coordinator shapes.
 
     The account coordinator publishes a four-way dict
-    (incoming/outgoing × active/delivered); the tracking coordinator publishes
+    (incoming/outgoing x active/delivered); the tracking coordinator publishes
     a plain active list plus a ``delivered`` attribute. This hides the
     difference from the entities.
     """
@@ -83,7 +84,7 @@ async def async_setup_entry(
             and entity_entry.unique_id.startswith(f"{entry_id}_")
             and entity_entry.unique_id not in non_parcel_unique_ids
         ):
-            barcode = entity_entry.unique_id[len(f"{entry_id}_"):]
+            barcode = entity_entry.unique_id[len(f"{entry_id}_") :]
             if barcode not in current_barcodes:
                 registry.async_remove(entity_entry.entity_id)
 
@@ -92,10 +93,10 @@ async def async_setup_entry(
             coordinator, entry, async_add_entities, current_barcodes
         ),
     ]
-    for parcel in _bucket(coordinator, "incoming_active"):
-        entities.append(
-            SwissPostParcelSensor(coordinator, entry, parcel.get("barcode", ""))
-        )
+    entities.extend(
+        SwissPostParcelSensor(coordinator, entry, parcel.get("barcode", ""))
+        for parcel in _bucket(coordinator, "incoming_active")
+    )
     entities.append(SwissPostNextDeliverySensor(coordinator, entry))
     entities.append(SwissPostDeliveredParcelsSensor(coordinator, entry))
     if entry.data.get(CONF_SOURCE) == SOURCE_ACCOUNT:
@@ -221,9 +222,7 @@ class SwissPostNextDeliverySensor(
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_attribution = ATTRIBUTION
 
-    def __init__(
-        self, coordinator: SwissPostCoordinator, entry: ConfigEntry
-    ) -> None:
+    def __init__(self, coordinator: SwissPostCoordinator, entry: ConfigEntry) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_next_delivery"
@@ -273,9 +272,7 @@ class SwissPostDeliveredParcelsSensor(
     _attr_attribution = ATTRIBUTION
     _unrecorded_attributes = frozenset({"parcels"})
 
-    def __init__(
-        self, coordinator: SwissPostCoordinator, entry: ConfigEntry
-    ) -> None:
+    def __init__(self, coordinator: SwissPostCoordinator, entry: ConfigEntry) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_delivered_parcels"
@@ -344,9 +341,7 @@ class SwissPostOutgoingDeliveredParcelsSensor(CoordinatorEntity, SensorEntity):
         return {"parcels": _bucket(self.coordinator, "outgoing_delivered")}
 
 
-class SwissPostLastUpdateSensor(
-    CoordinatorEntity[SwissPostCoordinator], SensorEntity
-):
+class SwissPostLastUpdateSensor(CoordinatorEntity[SwissPostCoordinator], SensorEntity):
     """Diagnostic sensor reporting when Swiss Post was last polled successfully."""
 
     _attr_has_entity_name = True
@@ -355,9 +350,7 @@ class SwissPostLastUpdateSensor(
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_attribution = ATTRIBUTION
 
-    def __init__(
-        self, coordinator: SwissPostCoordinator, entry: ConfigEntry
-    ) -> None:
+    def __init__(self, coordinator: SwissPostCoordinator, entry: ConfigEntry) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_last_update"

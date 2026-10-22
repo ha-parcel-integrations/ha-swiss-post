@@ -4,12 +4,13 @@ The session is the only stateful code in the integration, so the handshake, its
 403 recovery and the "empty list is not a delivery" trap all get explicit
 coverage here.
 """
+
 import json
 from unittest.mock import AsyncMock, MagicMock
 
 import aiohttp
-import pytest
 from multidict import CIMultiDict
+import pytest
 
 from custom_components.swiss_post.tracking import api as api_module
 from custom_components.swiss_post.tracking.api import (
@@ -18,12 +19,7 @@ from custom_components.swiss_post.tracking.api import (
     SwissPostSession,
 )
 
-from .payloads import (
-    DELIVERED_CODE,
-    EVENTS,
-    delivered_sample,
-    texts_response,
-)
+from .payloads import DELIVERED_CODE, EVENTS, delivered_sample, texts_response
 
 USER_ID = "<[anonymous]>b31beee6-0000-0000-0000-000000000000"
 CSRF = "csrf-token-value"
@@ -78,7 +74,6 @@ def _reset_one_shot_logs():
     api_module._history_failure_logged.clear()
     api_module._texts_failure_logged.clear()
     api_module._event_texts_cache.clear()
-    yield
 
 
 # ---------------------------------------------------------------------------
@@ -113,11 +108,14 @@ async def test_establish_reads_the_csrf_header_case_insensitively():
 
 
 @pytest.mark.parametrize(
-    "response,expected",
+    ("response", "expected"),
     [
         (_response(500), "HTTP 500"),
         (_response(200, "not json"), "unparseable"),
-        (_response(200, {"userIdentifier": None}, {"X-CSRF-TOKEN": CSRF}), "user identifier"),
+        (
+            _response(200, {"userIdentifier": None}, {"X-CSRF-TOKEN": CSRF}),
+            "user identifier",
+        ),
         (_response(200, {"userIdentifier": USER_ID}), "CSRF"),
     ],
 )
@@ -153,8 +151,11 @@ async def test_lookup_registers_the_code_before_reading_it():
 async def test_lookup_reuses_an_established_session():
     """One handshake serves every parcel — six lookups, one /api/user call."""
     session = _session(
-        gets=[_user_response(), _response(200, [delivered_sample()]),
-              _response(200, [delivered_sample()])],
+        gets=[
+            _user_response(),
+            _response(200, [delivered_sample()]),
+            _response(200, [delivered_sample()]),
+        ],
         posts=[_response(200, {"hash": DIGEST}), _response(200, {"hash": DIGEST})],
     )
     client = SwissPostApiClient(session)
@@ -162,7 +163,9 @@ async def test_lookup_reuses_an_established_session():
     await client.async_get_parcel(DELIVERED_CODE)
     await client.async_get_parcel(DELIVERED_CODE)
 
-    user_calls = [c for c in session.get.call_args_list if c[0][0].endswith("/api/user")]
+    user_calls = [
+        c for c in session.get.call_args_list if c[0][0].endswith("/api/user")
+    ]
     assert len(user_calls) == 1
 
 
@@ -188,7 +191,7 @@ async def test_empty_result_warns_only_once(caplog):
 
 
 @pytest.mark.parametrize(
-    "gets,posts,expected",
+    ("gets", "posts", "expected"),
     [
         # registration failures
         ([_user_response()], [_response(500)], "registering"),
@@ -253,7 +256,9 @@ async def test_expired_session_is_re_established_and_the_lookup_retried():
     parcel = await client.async_get_parcel(DELIVERED_CODE)
 
     assert parcel["shipmentNumber"] == DELIVERED_CODE
-    user_calls = [c for c in session.get.call_args_list if c[0][0].endswith("/api/user")]
+    user_calls = [
+        c for c in session.get.call_args_list if c[0][0].endswith("/api/user")
+    ]
     assert len(user_calls) == 2
     # The retry uses the *new* token, not the dead one.
     assert session.post.call_args.kwargs["headers"]["X-CSRF-TOKEN"] == "second-token"
@@ -399,7 +404,7 @@ async def test_an_empty_timeline_skips_the_wording_table():
 
 
 @pytest.mark.parametrize(
-    "response,expected",
+    ("response", "expected"),
     [
         (_response(404), "HTTP 404"),
         (_response(200, "not json"), "unparseable history"),
@@ -414,7 +419,13 @@ async def test_history_raises_on_unexpected_responses(response, expected):
 
 async def test_a_non_object_event_is_dropped_rather_than_raising():
     client = SwissPostApiClient(
-        _session(gets=[_response(200, ["nope", EVENTS[0]]), _response(200, texts_response())], posts=[])
+        _session(
+            gets=[
+                _response(200, ["nope", EVENTS[0]]),
+                _response(200, texts_response()),
+            ],
+            posts=[],
+        )
     )
 
     events = await client.async_get_history(IDENTITY)

@@ -16,15 +16,16 @@ The decisive trap: the inbox validates the **JWT ``id_token``**, not the opaque
 ``access_token`` (which it rejects as "Malformed token"). So the bearer is the
 ``id_token`` and it must be kept fresh — it lives one hour.
 """
+
 from __future__ import annotations
 
 import base64
+from collections.abc import Awaitable, Callable
 import hashlib
 import json
 import logging
 import secrets
 import time
-from collections.abc import Awaitable, Callable
 from typing import Any
 from urllib.parse import urlencode
 
@@ -166,7 +167,9 @@ class SwissPostAccountClient:
             try:
                 payload = await response.json(content_type=None)
             except ValueError as err:
-                raise SwissPostAccountApiError("token endpoint returned invalid JSON") from err
+                raise SwissPostAccountApiError(
+                    "token endpoint returned invalid JSON"
+                ) from err
         return _tokens(payload)
 
     async def async_exchange_code(self, code: str, verifier: str) -> dict[str, str]:

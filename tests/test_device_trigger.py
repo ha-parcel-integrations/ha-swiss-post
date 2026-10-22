@@ -1,5 +1,14 @@
 """Tests for Swiss Post device triggers."""
-from custom_components.swiss_post.const import DOMAIN
+
+from homeassistant.helpers import device_registry as dr
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+from custom_components.swiss_post.const import (
+    CONF_SOURCE,
+    DOMAIN,
+    SOURCE_ACCOUNT,
+    SOURCE_TRACKING,
+)
 from custom_components.swiss_post.device_trigger import (
     TRIGGER_EVENTS,
     async_get_triggers,
@@ -31,14 +40,6 @@ def test_trigger_events_map_to_domain_prefix():
 
 async def test_outgoing_triggers_only_offered_on_an_account_hub(hass):
     """A tracking hub has no sender side, so those triggers could never fire."""
-    from homeassistant.helpers import device_registry as dr
-    from pytest_homeassistant_custom_component.common import MockConfigEntry
-
-    from custom_components.swiss_post.const import (
-        CONF_SOURCE,
-        SOURCE_ACCOUNT,
-        SOURCE_TRACKING,
-    )
 
     outgoing = {"outgoing_parcel_status_changed", "outgoing_parcel_delivered"}
     registry = dr.async_get(hass)

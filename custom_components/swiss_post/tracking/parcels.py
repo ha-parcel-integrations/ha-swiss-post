@@ -8,10 +8,11 @@ delivered filter and one-shot warning machinery are shared and imported from
 The payload this maps is surface A's shipment dict, with surface B's event
 timeline merged into its ``events`` key by :mod:`.api`.
 """
+
 from __future__ import annotations
 
-import logging
 from datetime import datetime
+import logging
 from typing import Any
 
 from ..const import HISTORY_MAX_EVENTS, TRACKING_URL, ParcelStatus
@@ -301,7 +302,9 @@ def normalize_parcel(raw: dict, *, include_history: bool = False) -> dict:
         "status": status,
         "raw_status": raw.get("status") or status_code,
         "delivered": delivered,
-        "delivered_at": to_iso_timestamp(raw.get("deliveryDate")) if delivered else None,
+        "delivered_at": to_iso_timestamp(raw.get("deliveryDate"))
+        if delivered
+        else None,
         "planned_from": None if delivered else planned_from,
         "planned_to": None if delivered else planned_to,
         "pickup": pickup,

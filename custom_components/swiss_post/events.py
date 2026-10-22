@@ -4,6 +4,7 @@ The public tracking codes and the SwissID account inbox are two different
 fetches but one event contract. Firing lives here rather than in either
 coordinator so the two cannot drift apart on it.
 """
+
 from __future__ import annotations
 
 from homeassistant.core import HomeAssistant

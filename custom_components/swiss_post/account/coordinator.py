@@ -3,14 +3,15 @@
 Unlike the public tracking coordinator (which polls each code and can suspend
 entirely), the account inbox is one batched fetch and is polled at a steady
 cadence. It publishes the same canonical parcel lists, split four ways
-(incoming/outgoing × active/delivered), so the shared presentation layer can
+(incoming/outgoing x active/delivered), so the shared presentation layer can
 read them through its ``_bucket`` helper.
 """
+
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 import logging
-from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import aiohttp
@@ -65,9 +66,9 @@ class SwissPostAccountCoordinator(DataUpdateCoordinator[dict[str, list[dict]]]):
         self._client = client
         # None on the first refresh deliberately suppresses historical events.
         self._known_state: dict[str, ParcelStatus] | None = None
-        self._known_delivery_times: (
-            dict[str, tuple[str | None, str | None]] | None
-        ) = None
+        self._known_delivery_times: dict[str, tuple[str | None, str | None]] | None = (
+            None
+        )
         self._known_outgoing_state: dict[str, ParcelStatus] | None = None
         self._cached_device_id: str | None = None
         self.last_success_time: datetime | None = None
@@ -85,9 +86,7 @@ class SwissPostAccountCoordinator(DataUpdateCoordinator[dict[str, list[dict]]]):
         """Account polls are batched; no parcel is ever skipped from a fetch."""
         return set()
 
-    async def _async_details(
-        self, items: list[dict]
-    ) -> list[dict[str, Any] | None]:
+    async def _async_details(self, items: list[dict]) -> list[dict[str, Any] | None]:
         """Fetch the per-parcel enrichment record for each inbox item.
 
         One extra request per parcel, which is why it is opt-in. A parcel whose
@@ -99,13 +98,15 @@ class SwissPostAccountCoordinator(DataUpdateCoordinator[dict[str, list[dict]]]):
 
         async def one(item: dict) -> dict[str, Any] | None:
             async with semaphore:
-                return await self._client.async_get_detail(str(item.get("mailpieceId") or ""))
+                return await self._client.async_get_detail(
+                    str(item.get("mailpieceId") or "")
+                )
 
         results = await asyncio.gather(
             *(one(item) for item in items), return_exceptions=True
         )
         details: list[dict[str, Any] | None] = []
-        for item, result in zip(items, results):
+        for item, result in zip(items, results, strict=True):
             if isinstance(result, BaseException):
                 if not isinstance(
                     result, (SwissPostAccountApiError, aiohttp.ClientError)
@@ -162,19 +163,23 @@ class SwissPostAccountCoordinator(DataUpdateCoordinator[dict[str, list[dict]]]):
         # The inbox is a summary; weight, dimensions and the event timeline need
         # a second call per parcel. Opt-in for exactly that reason, and read
         # fresh every poll so toggling the option takes effect on the next one.
-        if self.config_entry.options.get(
-            CONF_ACCOUNT_DETAILS, DEFAULT_ACCOUNT_DETAILS
-        ):
+        if self.config_entry.options.get(CONF_ACCOUNT_DETAILS, DEFAULT_ACCOUNT_DETAILS):
             details = await self._async_details(raw_items)
         else:
             details = [None] * len(raw_items)
 
         parcels = [
             normalize_account_parcel(item, detail=detail)
-            for item, detail in zip(raw_items, details)
+            for item, detail in zip(raw_items, details, strict=True)
         ]
-        incoming = [p for p, item in zip(parcels, raw_items) if not is_outgoing(item)]
-        outgoing = [p for p, item in zip(parcels, raw_items) if is_outgoing(item)]
+        incoming = [
+            p
+            for p, item in zip(parcels, raw_items, strict=True)
+            if not is_outgoing(item)
+        ]
+        outgoing = [
+            p for p, item in zip(parcels, raw_items, strict=True) if is_outgoing(item)
+        ]
 
         device_id = self._device_id()
 
@@ -216,7 +221,7 @@ class SwissPostAccountCoordinator(DataUpdateCoordinator[dict[str, list[dict]]]):
         )
         self._known_outgoing_state = snapshot_states(seen_outgoing)
 
-        self.last_success_time = datetime.now(timezone.utc)
+        self.last_success_time = datetime.now(UTC)
         return {
             "incoming_active": incoming_active,
             "incoming_delivered": incoming_delivered,

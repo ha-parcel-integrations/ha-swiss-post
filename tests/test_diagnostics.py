@@ -1,12 +1,20 @@
 """Tests for Swiss Post diagnostics."""
+
 from unittest.mock import MagicMock
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.swiss_post.account.parcels import normalize_account_parcel
-from custom_components.swiss_post.diagnostics import (
-    async_get_config_entry_diagnostics,
+from custom_components.swiss_post.const import (
+    CONF_ID_TOKEN,
+    CONF_REFRESH_TOKEN,
+    CONF_SOURCE,
+    DOMAIN,
+    SOURCE_ACCOUNT,
 )
+from custom_components.swiss_post.diagnostics import async_get_config_entry_diagnostics
+
+from .payloads import account_detail, account_element
 
 
 async def test_diagnostics_redacts_and_counts(hass):
@@ -58,13 +66,6 @@ async def test_diagnostics_redacts_and_counts(hass):
 
 async def test_diagnostics_reports_the_account_four_way_split(hass):
     """The account coordinator publishes a dict; diagnostics must read it."""
-    from custom_components.swiss_post.const import (
-        CONF_ID_TOKEN,
-        CONF_REFRESH_TOKEN,
-        CONF_SOURCE,
-        DOMAIN,
-        SOURCE_ACCOUNT,
-    )
 
     entry = MockConfigEntry(
         domain=DOMAIN,
@@ -110,9 +111,6 @@ async def test_diagnostics_reports_the_account_four_way_split(hass):
 
 async def test_diagnostics_redacts_the_enrichment_event_coordinates(hass):
     """The last event of a delivered parcel is the user's own doorstep."""
-    from custom_components.swiss_post.const import CONF_SOURCE, DOMAIN, SOURCE_ACCOUNT
-
-    from .payloads import account_detail, account_element
 
     entry = MockConfigEntry(
         domain=DOMAIN,

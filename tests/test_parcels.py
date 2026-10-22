@@ -4,7 +4,8 @@ These need no Home Assistant instance — the whole point of keeping
 ``parcels.py`` free of I/O is that the carrier-specific mapping (the part you
 rewrite per carrier) can be tested as plain functions.
 """
-from datetime import datetime, timedelta, timezone
+
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -50,7 +51,6 @@ from .payloads import (
 def _reset_one_shot_logs():
     """Clear the module's one-shot log state between tests."""
     parcels_module._warned_once.clear()
-    yield
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +59,7 @@ def _reset_one_shot_logs():
 
 
 @pytest.mark.parametrize(
-    "code,expected",
+    ("code", "expected"),
     [
         ("REGISTERED", ParcelStatus.REGISTERED),
         ("CUSTOMS", ParcelStatus.IN_TRANSIT),
@@ -99,7 +99,7 @@ def test_unmapped_status_warns_only_once(caplog):
 def test_parse_iso_handles_z_naive_and_garbage():
     assert parse_iso("2026-04-16T10:28:29Z").tzinfo is not None
     # A naive value is assumed UTC so mixed lists still sort.
-    assert parse_iso("2026-04-16T10:28:29").tzinfo == timezone.utc
+    assert parse_iso("2026-04-16T10:28:29").tzinfo == UTC
     assert parse_iso("not-a-date") is None
     assert parse_iso(None) is None
 
@@ -129,7 +129,9 @@ def test_format_dimensions_needs_all_three_axes():
 
 
 def test_build_history_orders_oldest_to_newest():
-    history = build_history([dict(e, description=f"d{i}") for i, e in enumerate(EVENTS)])
+    history = build_history(
+        [dict(e, description=f"d{i}") for i, e in enumerate(EVENTS)]
+    )
     assert len(history) == 5
     assert history[0]["raw_status"] == "d0"
     assert history[-1]["raw_status"] == "d4"
@@ -158,8 +160,10 @@ def test_build_history_handles_missing_and_malformed():
 def test_build_history_keeps_unparseable_timestamp_last():
     history = build_history(
         [
-            dict(event("PARCEL.*.65.1202", "2026-04-16T10:00:00+02:00"),
-                 description="fine"),
+            dict(
+                event("PARCEL.*.65.1202", "2026-04-16T10:00:00+02:00"),
+                description="fine",
+            ),
             dict(event("PARCEL.*.65.1202", "not-a-date"), description="odd"),
         ]
     )
@@ -251,7 +255,7 @@ def test_normalize_sorts_the_dimensions_regardless_of_payload_order():
     for permutation in ((400, 250, 155), (155, 400, 250), (250, 155, 400)):
         raw = delivered_sample()
         raw["physicalProperties"] = dict(
-            zip(("dimension1", "dimension2", "dimension3"), permutation)
+            zip(("dimension1", "dimension2", "dimension3"), permutation, strict=True)
         )
         assert normalize_parcel(raw)["dimensions"] == expected
 
@@ -317,7 +321,7 @@ def test_a_delivery_class_we_do_not_know_still_gets_reported(caplog):
 
 
 @pytest.mark.parametrize(
-    "raw,expected",
+    ("raw", "expected"),
     [
         ({"source": "LETTER"}, True),
         ({"product": "LETTER.*.106"}, True),
@@ -440,7 +444,7 @@ def _entry(filter_type: str, amount: int) -> MockConfigEntry:
 
 
 def _delivered_pair() -> list[dict]:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return [
         {"barcode": "RECENT", "delivered_at": (now - timedelta(days=1)).isoformat()},
         {"barcode": "OLD", "delivered_at": (now - timedelta(days=30)).isoformat()},
@@ -491,9 +495,10 @@ def test_resolve_event_text_prefers_the_product_specific_entry():
 
 def test_resolve_event_text_falls_through_to_the_catch_all_then_wildcard():
     event_code = {"eventCode": "PARCEL.*.65.1003"}
-    assert resolve_event_text(
-        {"PARCEL.*.ALL_PROD.1003.*": "Catch-all"}, event_code
-    ) == "Catch-all"
+    assert (
+        resolve_event_text({"PARCEL.*.ALL_PROD.1003.*": "Catch-all"}, event_code)
+        == "Catch-all"
+    )
     assert resolve_event_text({"PARCEL.*.*.1003.*": "Wildcard"}, event_code) == (
         "Wildcard"
     )

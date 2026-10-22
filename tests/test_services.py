@@ -1,20 +1,24 @@
 """Tests for the Swiss Post services (track_parcel / untrack_parcel)."""
+
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from homeassistant.exceptions import ServiceValidationError
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.swiss_post.const import (
     CONF_PARCELS,
+    CONF_SOURCE,
     CONF_TRACKING_CODE,
     DOMAIN,
+    SOURCE_ACCOUNT,
+    SOURCE_TRACKING,
 )
+from custom_components.swiss_post.services import _resolve_entry
 
 from .payloads import active_sample
 
 _SAMPLE = active_sample()
-
 
 
 async def _setup(hass, parcels: list[dict] | None = None) -> MockConfigEntry:
@@ -65,9 +69,7 @@ async def test_track_parcel_normalizes_code(hass):
         )
         await hass.async_block_till_done()
 
-    assert entry.options[CONF_PARCELS] == [
-        {CONF_TRACKING_CODE: "990012345678901234"}
-    ]
+    assert entry.options[CONF_PARCELS] == [{CONF_TRACKING_CODE: "990012345678901234"}]
 
 
 async def test_track_parcel_rejects_empty_code(hass):
@@ -97,9 +99,7 @@ async def test_track_parcel_duplicate_is_noop(hass):
 
 
 async def test_untrack_parcel_removes_from_options(hass):
-    entry = await _setup(
-        hass, parcels=[{CONF_TRACKING_CODE: "990012345678901234"}]
-    )
+    entry = await _setup(hass, parcels=[{CONF_TRACKING_CODE: "990012345678901234"}])
     with patch(
         "custom_components.swiss_post.tracking.api.SwissPostApiClient.async_get_parcel",
         new=AsyncMock(return_value=_SAMPLE),
@@ -116,9 +116,7 @@ async def test_untrack_parcel_removes_from_options(hass):
 
 
 async def test_untrack_unknown_code_is_noop(hass):
-    entry = await _setup(
-        hass, parcels=[{CONF_TRACKING_CODE: "990012345678901234"}]
-    )
+    entry = await _setup(hass, parcels=[{CONF_TRACKING_CODE: "990012345678901234"}])
     with patch(
         "custom_components.swiss_post.tracking.api.SwissPostApiClient.async_get_parcel",
         new=AsyncMock(return_value=_SAMPLE),
@@ -142,12 +140,6 @@ async def test_services_target_the_tracking_hub_not_the_account_hub(hass):
     into the account hub's options where nothing reads it — the parcel would
     silently never appear.
     """
-    from custom_components.swiss_post.const import (
-        CONF_SOURCE,
-        SOURCE_ACCOUNT,
-        SOURCE_TRACKING,
-    )
-    from custom_components.swiss_post.services import _resolve_entry
 
     account = MockConfigEntry(
         domain=DOMAIN,
@@ -169,10 +161,6 @@ async def test_services_target_the_tracking_hub_not_the_account_hub(hass):
 
 async def test_services_reject_an_account_only_install(hass):
     """With no tracking hub there is nowhere to put a hand-entered code."""
-    from homeassistant.exceptions import ServiceValidationError
-
-    from custom_components.swiss_post.const import CONF_SOURCE, SOURCE_ACCOUNT
-    from custom_components.swiss_post.services import _resolve_entry
 
     MockConfigEntry(
         domain=DOMAIN,

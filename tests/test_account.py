@@ -4,13 +4,16 @@ Covers the three pieces the account model adds: the OAuth/PKCE client (token
 rotation and the id_token-as-bearer trap), the overview normalisation, and the
 coordinator's four-way incoming/outgoing split.
 """
+
 import base64
 import json
 import time
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
+from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers.update_coordinator import UpdateFailed
 from multidict import CIMultiDict
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.swiss_post.account.client import (
@@ -20,9 +23,7 @@ from custom_components.swiss_post.account.client import (
     SwissPostAccountReauthRequired,
     decode_jwt_claims,
 )
-from custom_components.swiss_post.account.coordinator import (
-    SwissPostAccountCoordinator,
-)
+from custom_components.swiss_post.account.coordinator import SwissPostAccountCoordinator
 from custom_components.swiss_post.account.parcels import (
     is_letter,
     is_outgoing,
@@ -30,14 +31,18 @@ from custom_components.swiss_post.account.parcels import (
     normalize_account_parcel,
 )
 from custom_components.swiss_post.const import (
+    CONF_ACCOUNT_DETAILS,
     CONF_DELIVERED_FILTER_AMOUNT,
     CONF_DELIVERED_FILTER_TYPE,
     CONF_SOURCE,
     DOMAIN,
+    HISTORY_MAX_EVENTS,
+    MID_INTERVAL_MINUTES,
     OIDC_CLIENT_ID,
     SOURCE_ACCOUNT,
     ParcelStatus,
 )
+from custom_components.swiss_post.tracking.parcels import normalize_parcel
 
 from .payloads import (
     ACCOUNT_IN_ID,
@@ -45,6 +50,7 @@ from .payloads import (
     ACCOUNT_OUT_ID,
     account_detail,
     account_element,
+    delivered_sample,
     detail_response,
     overview_response,
 )
@@ -96,7 +102,7 @@ def _token_body(*, id_token: str | None = None, refresh: str = "rt-new") -> dict
 
 
 @pytest.mark.parametrize(
-    "code,expected",
+    ("code", "expected"),
     [
         ("NOT_YET_SENT", ParcelStatus.REGISTERED),
         ("ON_GOING_DELIVERY", ParcelStatus.IN_TRANSIT),
@@ -194,7 +200,9 @@ def test_normalize_account_parcel_exposes_the_pickup_office():
 
 
 def test_normalize_account_parcel_survives_a_missing_address():
-    parcel = normalize_account_parcel({"mailpieceId": "X", "mailpieceStatusType": "DELIVERED"})
+    parcel = normalize_account_parcel(
+        {"mailpieceId": "X", "mailpieceStatusType": "DELIVERED"}
+    )
     assert parcel["receiver"] is None
     assert parcel["pickup_point"] is None
 
@@ -210,9 +218,6 @@ def test_normalize_account_parcel_warns_once_about_an_end_timestamp(caplog):
 
 def test_normalize_account_parcel_publishes_the_canonical_keys():
     """The account source must publish the same contract as the tracking one."""
-    from custom_components.swiss_post.tracking.parcels import normalize_parcel
-
-    from .payloads import delivered_sample
 
     expected = set(normalize_parcel(delivered_sample()))
     assert set(normalize_account_parcel(account_element())) == expected
@@ -243,7 +248,7 @@ def test_enrichment_parses_the_formatted_weight_and_dimensions():
 
 
 @pytest.mark.parametrize(
-    "value,expected",
+    ("value", "expected"),
     [
         ("1.14 kg", 1.14),
         # Localisation is unprobed, so a decimal comma is accepted up front.
@@ -263,7 +268,7 @@ def test_enrichment_weight_parsing(value, expected):
 
 
 @pytest.mark.parametrize(
-    "value,expected",
+    ("value", "expected"),
     [
         ("40.0 x 25.0 x 15.5 cm", (40.0, 25.0, 15.5)),
         ("40,0 x 25,0 x 15,5 cm", (40.0, 25.0, 15.5)),
@@ -327,7 +332,6 @@ def test_enrichment_history_skips_undatable_and_malformed_events():
 
 
 def test_enrichment_history_is_capped():
-    from custom_components.swiss_post.const import HISTORY_MAX_EVENTS
 
     events = [
         {"timestamp": 1776328109000 + index * 1000, "title": f"Event {index}"}
@@ -402,7 +406,9 @@ async def test_exchange_code_rejects_a_bad_code():
 
 
 async def test_token_response_without_tokens_is_an_error():
-    client = SwissPostAccountClient(_session(posts=[_response(200, {"access_token": "x"})]))
+    client = SwissPostAccountClient(
+        _session(posts=[_response(200, {"access_token": "x"})])
+    )
     with pytest.raises(SwissPostAccountApiError):
         await client.async_exchange_code("CODE", "VERIFIER")
 
@@ -488,7 +494,9 @@ async def test_get_detail_without_a_code_makes_no_request():
     session.get.assert_not_called()
 
 
-@pytest.mark.parametrize("body", [_response(503), _response(200, "not json"), _response(200, [])])
+@pytest.mark.parametrize(
+    "body", [_response(503), _response(200, "not json"), _response(200, [])]
+)
 async def test_get_detail_surfaces_a_broken_response(body):
     client = SwissPostAccountClient(_session(gets=[body]), device_id="dev-1")
     with pytest.raises(SwissPostAccountApiError):
@@ -635,7 +643,6 @@ async def test_coordinator_skips_the_enrichment_by_default(hass):
 
 
 async def test_coordinator_enriches_every_parcel_when_asked(hass):
-    from custom_components.swiss_post.const import CONF_ACCOUNT_DETAILS
 
     coordinator, data = await _refresh(
         hass,
@@ -649,7 +656,9 @@ async def test_coordinator_enriches_every_parcel_when_asked(hass):
         **{CONF_ACCOUNT_DETAILS: True},
     )
     assert coordinator._client.async_get_detail.await_count == 2
-    assert [call.args[0] for call in coordinator._client.async_get_detail.await_args_list] == [
+    assert [
+        call.args[0] for call in coordinator._client.async_get_detail.await_args_list
+    ] == [
         ACCOUNT_IN_ID,
         ACCOUNT_OUT_ID,
     ]
@@ -659,7 +668,6 @@ async def test_coordinator_enriches_every_parcel_when_asked(hass):
 
 async def test_coordinator_keeps_a_parcel_whose_enrichment_fails(hass):
     """Losing a weight must not cost the user every parcel in the inbox."""
-    from custom_components.swiss_post.const import CONF_ACCOUNT_DETAILS
 
     _, data = await _refresh(
         hass,
@@ -681,7 +689,6 @@ async def test_coordinator_keeps_a_parcel_whose_enrichment_fails(hass):
 
 async def test_coordinator_reraises_an_unexpected_enrichment_error(hass):
     """A programming error must fail the poll, not pass as a missing weight."""
-    from custom_components.swiss_post.const import CONF_ACCOUNT_DETAILS
 
     coordinator, _ = await _refresh(
         hass,
@@ -782,7 +789,6 @@ async def test_coordinator_surfaces_reauth(hass):
     ConfigEntryAuthFailed is the only exception DataUpdateCoordinator turns into
     the reauth flow; anything else would retry a dead chain forever.
     """
-    from homeassistant.exceptions import ConfigEntryAuthFailed
 
     entry = _account_entry()
     entry.add_to_hass(hass)
@@ -796,7 +802,6 @@ async def test_coordinator_surfaces_reauth(hass):
 
 
 async def test_coordinator_wraps_an_api_error_as_update_failed(hass):
-    from homeassistant.helpers.update_coordinator import UpdateFailed
 
     entry = _account_entry()
     entry.add_to_hass(hass)
@@ -808,7 +813,6 @@ async def test_coordinator_wraps_an_api_error_as_update_failed(hass):
 
 
 async def test_account_coordinator_polls_at_the_steady_cadence(hass):
-    from custom_components.swiss_post.const import MID_INTERVAL_MINUTES
 
     coordinator, _ = await _refresh(hass, overview_response())
     assert coordinator.current_tier_minutes == MID_INTERVAL_MINUTES

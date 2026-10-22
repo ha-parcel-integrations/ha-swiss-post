@@ -1,19 +1,25 @@
 """Tests for Swiss Post setup and unload."""
+
 from unittest.mock import AsyncMock, patch
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.swiss_post.account.client import SwissPostAccountReauthRequired
 from custom_components.swiss_post.const import (
+    CONF_DEVICE_ID,
+    CONF_ID_TOKEN,
     CONF_PARCELS,
+    CONF_REFRESH_TOKEN,
+    CONF_SOURCE,
     CONF_TRACKING_CODE,
     DOMAIN,
+    SOURCE_ACCOUNT,
 )
 from custom_components.swiss_post.tracking.api import SwissPostApiError
 
-from .payloads import ACTIVE_CODE
-from .payloads import active_sample as _sample
+from .payloads import ACTIVE_CODE, active_sample as _sample
 
 OTHER_CODE = "990022222222222222"
 
@@ -84,7 +90,10 @@ async def test_per_parcel_sensor_spawn_and_remove(hass):
     entry.add_to_hass(hass)
 
     mock = AsyncMock(return_value=_sample())
-    with patch("custom_components.swiss_post.tracking.api.SwissPostApiClient.async_get_parcel", new=mock):
+    with patch(
+        "custom_components.swiss_post.tracking.api.SwissPostApiClient.async_get_parcel",
+        new=mock,
+    ):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
@@ -120,7 +129,10 @@ async def test_options_update_applies_live_without_reload(hass):
     entry.add_to_hass(hass)
 
     mock = AsyncMock(return_value=_sample())
-    with patch("custom_components.swiss_post.tracking.api.SwissPostApiClient.async_get_parcel", new=mock):
+    with patch(
+        "custom_components.swiss_post.tracking.api.SwissPostApiClient.async_get_parcel",
+        new=mock,
+    ):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
@@ -147,13 +159,6 @@ async def test_options_update_applies_live_without_reload(hass):
 
 
 def _account_entry() -> MockConfigEntry:
-    from custom_components.swiss_post.const import (
-        CONF_DEVICE_ID,
-        CONF_ID_TOKEN,
-        CONF_REFRESH_TOKEN,
-        CONF_SOURCE,
-        SOURCE_ACCOUNT,
-    )
 
     return MockConfigEntry(
         domain=DOMAIN,
@@ -195,7 +200,6 @@ async def test_account_entry_sets_up_and_skips_the_tracking_services(hass):
 
 async def test_account_entry_persists_rotated_tokens(hass):
     """The refresh token rotates on every refresh — losing it breaks the chain."""
-    from custom_components.swiss_post.const import CONF_ID_TOKEN, CONF_REFRESH_TOKEN
 
     entry = _account_entry()
     entry.add_to_hass(hass)
@@ -223,9 +227,6 @@ async def test_account_entry_persists_rotated_tokens(hass):
 
 async def test_account_entry_starts_reauth_when_the_chain_is_dead(hass):
     """A dead refresh chain must ask the user to sign in, not retry forever."""
-    from custom_components.swiss_post.account.client import (
-        SwissPostAccountReauthRequired,
-    )
 
     entry = _account_entry()
     entry.add_to_hass(hass)
@@ -239,4 +240,8 @@ async def test_account_entry_starts_reauth_when_the_chain_is_dead(hass):
         await hass.async_block_till_done()
 
     assert entry.state is ConfigEntryState.SETUP_ERROR
-    assert [f for f in hass.config_entries.flow.async_progress() if f["context"]["source"] == "reauth"]
+    assert [
+        f
+        for f in hass.config_entries.flow.async_progress()
+        if f["context"]["source"] == "reauth"
+    ]

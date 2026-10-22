@@ -1,5 +1,8 @@
 """Tests for Swiss Post sensor property logic."""
-from datetime import datetime, timezone
+
+from datetime import UTC, datetime
+import json
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from custom_components.swiss_post.const import ParcelStatus
@@ -8,7 +11,10 @@ from custom_components.swiss_post.sensor import (
     SwissPostIncomingParcelsSensor,
     SwissPostLastUpdateSensor,
     SwissPostNextDeliverySensor,
+    SwissPostOutgoingDeliveredParcelsSensor,
+    SwissPostOutgoingParcelsSensor,
     SwissPostParcelSensor,
+    _bucket,
 )
 
 
@@ -44,7 +50,9 @@ def _parcel(
 
 def test_incoming_counts_and_lists():
     coordinator = _coordinator([_parcel("A"), _parcel("B")])
-    sensor = SwissPostIncomingParcelsSensor(coordinator, _entry(), lambda _: None, set())
+    sensor = SwissPostIncomingParcelsSensor(
+        coordinator, _entry(), lambda _: None, set()
+    )
     assert sensor.native_value == 2
     assert len(sensor.extra_state_attributes["parcels"]) == 2
 
@@ -63,12 +71,14 @@ def test_parcel_sensor_missing_barcode():
 
 
 def test_next_delivery_picks_earliest():
-    coordinator = _coordinator([
-        _parcel("A", planned_from="2026-05-02T10:00:00Z"),
-        _parcel("B", planned_from="2026-05-01T10:00:00Z"),
-    ])
+    coordinator = _coordinator(
+        [
+            _parcel("A", planned_from="2026-05-02T10:00:00Z"),
+            _parcel("B", planned_from="2026-05-01T10:00:00Z"),
+        ]
+    )
     sensor = SwissPostNextDeliverySensor(coordinator, _entry())
-    assert sensor.native_value == datetime(2026, 5, 1, 10, 0, tzinfo=timezone.utc)
+    assert sensor.native_value == datetime(2026, 5, 1, 10, 0, tzinfo=UTC)
     assert sensor.extra_state_attributes["barcode"] == "B"
 
 
@@ -79,16 +89,20 @@ def test_next_delivery_none_without_moments():
 
 
 def test_next_delivery_skips_unparseable_moment():
-    coordinator = _coordinator([
-        _parcel("A", planned_from="not-a-date"),
-        _parcel("B", planned_from="2026-05-01T10:00:00Z"),
-    ])
+    coordinator = _coordinator(
+        [
+            _parcel("A", planned_from="not-a-date"),
+            _parcel("B", planned_from="2026-05-01T10:00:00Z"),
+        ]
+    )
     sensor = SwissPostNextDeliverySensor(coordinator, _entry())
     assert sensor.extra_state_attributes["barcode"] == "B"
 
 
 def test_delivered_sensor():
-    coordinator = _coordinator([], delivered=[_parcel("D", status=ParcelStatus.DELIVERED)])
+    coordinator = _coordinator(
+        [], delivered=[_parcel("D", status=ParcelStatus.DELIVERED)]
+    )
     sensor = SwissPostDeliveredParcelsSensor(coordinator, _entry())
     assert sensor.native_value == 1
     assert sensor.extra_state_attributes["parcels"][0]["barcode"] == "D"
@@ -96,7 +110,7 @@ def test_delivered_sensor():
 
 def test_last_update_sensor():
     coordinator = _coordinator([])
-    moment = datetime(2026, 6, 30, 12, 0, tzinfo=timezone.utc)
+    moment = datetime(2026, 6, 30, 12, 0, tzinfo=UTC)
     coordinator.last_success_time = moment
     sensor = SwissPostLastUpdateSensor(coordinator, _entry())
     assert sensor.native_value == moment
@@ -122,7 +136,6 @@ def _account_coordinator(**buckets) -> MagicMock:
 
 def test_bucket_reads_both_coordinator_shapes():
     """The entities must not care which source they are attached to."""
-    from custom_components.swiss_post.sensor import _bucket
 
     tracking = _coordinator([_parcel("A")], delivered=[_parcel("B")])
     assert [p["barcode"] for p in _bucket(tracking, "incoming_active")] == ["A"]
@@ -137,15 +150,13 @@ def test_bucket_reads_both_coordinator_shapes():
 
 def test_incoming_sensor_reads_the_account_dict():
     coordinator = _account_coordinator(incoming_active=[_parcel("A"), _parcel("B")])
-    sensor = SwissPostIncomingParcelsSensor(coordinator, _entry(), lambda _: None, set())
+    sensor = SwissPostIncomingParcelsSensor(
+        coordinator, _entry(), lambda _: None, set()
+    )
     assert sensor.native_value == 2
 
 
 def test_outgoing_sensors_count_sender_parcels():
-    from custom_components.swiss_post.sensor import (
-        SwissPostOutgoingDeliveredParcelsSensor,
-        SwissPostOutgoingParcelsSensor,
-    )
 
     coordinator = _account_coordinator(
         outgoing_active=[_parcel("A")],
@@ -172,8 +183,6 @@ def test_every_sensor_has_an_icon_and_a_consistent_unit():
     icon, and a unit copied from English leaves a Dutch dashboard reading
     "pakketten" on one tile and "parcels" on the next.
     """
-    import json
-    from pathlib import Path
 
     root = Path("custom_components/swiss_post")
     icons = json.loads((root / "icons.json").read_text())["entity"]["sensor"]

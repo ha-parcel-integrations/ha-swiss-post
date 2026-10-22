@@ -1,4 +1,5 @@
 """Tests for the Swiss Post config and options flow."""
+
 from unittest.mock import AsyncMock, patch
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -8,10 +9,12 @@ from custom_components.swiss_post.account.client import (
     SwissPostAccountInvalidAuth,
 )
 from custom_components.swiss_post.config_flow import (
+    _parse_redirect_url,
     normalize_tracking_code,
     valid_tracking_code,
 )
 from custom_components.swiss_post.const import (
+    CONF_ACCOUNT_DETAILS,
     CONF_ACCOUNT_SUB,
     CONF_DELIVERED_FILTER_AMOUNT,
     CONF_DELIVERED_FILTER_TYPE,
@@ -33,9 +36,7 @@ _AUTHORIZE = (
     "VERIFIER",
     "STATE",
 )
-_REDIRECT_OK = (
-    "https://app.post.ch/mainapp/auth/callback?code=THECODE&state=STATE"
-)
+_REDIRECT_OK = "https://app.post.ch/mainapp/auth/callback?code=THECODE&state=STATE"
 
 
 def test_normalize_tracking_code_strips_and_uppercases():
@@ -260,7 +261,6 @@ async def test_account_options_menu_hides_the_parcel_page(hass):
 async def test_account_settings_offer_the_details_toggle_not_history(hass):
     """On the inbox the timeline arrives bundled with the weight and the size,
     so one toggle buys all three and a separate history switch would mislead."""
-    from custom_components.swiss_post.const import CONF_ACCOUNT_DETAILS
 
     entry = MockConfigEntry(
         domain=DOMAIN,
@@ -298,8 +298,12 @@ def _hub(parcels: list[dict]) -> MockConfigEntry:
 
 
 def _init_input(
-    *, add="", remove=None, history=False,
-    filter_type="days", amount=7,
+    *,
+    add="",
+    remove=None,
+    history=False,
+    filter_type="days",
+    amount=7,
 ) -> dict:
     """Build the sectioned options-form submission."""
     parcels: dict = {"add": add}
@@ -327,7 +331,9 @@ async def _open_options_step(hass, entry, step_id: str):
 
 async def test_options_parcel_list_can_be_cleared(hass):
     """A submitted empty list removes the final manually tracked parcel."""
-    entry = MockConfigEntry(domain=DOMAIN, options={CONF_PARCELS: [{CONF_TRACKING_CODE: "EXAMPLE111111"}]})
+    entry = MockConfigEntry(
+        domain=DOMAIN, options={CONF_PARCELS: [{CONF_TRACKING_CODE: "EXAMPLE111111"}]}
+    )
     entry.add_to_hass(hass)
     result = await _open_options_step(hass, entry, "parcels")
     result = await hass.config_entries.options.async_configure(
@@ -344,7 +350,12 @@ async def test_options_settings_preserve_parcel_list(hass):
     entry.add_to_hass(hass)
     result = await _open_options_step(hass, entry, "settings")
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {CONF_DELIVERED_FILTER_TYPE: "days", CONF_DELIVERED_FILTER_AMOUNT: 7, CONF_INCLUDE_HISTORY: False}
+        result["flow_id"],
+        {
+            CONF_DELIVERED_FILTER_TYPE: "days",
+            CONF_DELIVERED_FILTER_AMOUNT: 7,
+            CONF_INCLUDE_HISTORY: False,
+        },
     )
     assert result["type"] == "create_entry"
     assert result["data"][CONF_PARCELS] == parcels
@@ -507,7 +518,6 @@ async def test_account_flow_reports_a_connection_failure(hass):
 
 def test_parse_redirect_url_tolerates_messy_pasting():
     """Users paste with whitespace and newlines; extra params are ignored."""
-    from custom_components.swiss_post.config_flow import _parse_redirect_url
 
     code, state = _parse_redirect_url(
         "  https://app.post.ch/mainapp/auth/callback"

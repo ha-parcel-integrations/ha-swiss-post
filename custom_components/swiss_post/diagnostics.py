@@ -1,4 +1,5 @@
 """Diagnostics support for the Swiss Post parcel tracker integration."""
+
 from __future__ import annotations
 
 from typing import Any

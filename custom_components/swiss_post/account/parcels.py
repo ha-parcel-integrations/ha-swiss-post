@@ -11,11 +11,12 @@ from the optional per-parcel enrichment record, which
 :func:`normalize_account_parcel` takes as ``detail`` and merges in. Without it
 those fields stay ``None`` — never omitted, same as every other carrier.
 """
+
 from __future__ import annotations
 
+from datetime import datetime
 import logging
 import re
-from datetime import datetime
 from typing import Any
 from urllib.parse import quote
 
@@ -91,9 +92,7 @@ def _receiver(raw: dict[str, Any]) -> str | None:
     address = raw.get("deliveryAddress") or {}
     detail = address.get("addressDetail") or {}
     parts = [
-        str(part).strip()
-        for part in (detail.get("zip4"), detail.get("city"))
-        if part
+        str(part).strip() for part in (detail.get("zip4"), detail.get("city")) if part
     ]
     return " ".join(parts) or None
 
@@ -173,7 +172,9 @@ def _dimensions(detail: dict[str, Any]) -> dict[str, Any] | None:
         _unparsed("dimensions", value)
         return None
     factor = _LENGTH_TO_CM[match[4].lower()]
-    height, width, length = sorted(_decimal(match[index]) * factor for index in (1, 2, 3))
+    height, width, length = sorted(
+        _decimal(match[index]) * factor for index in (1, 2, 3)
+    )
     return format_dimensions(length, width, height)
 
 
@@ -278,7 +279,9 @@ def normalize_account_parcel(
         "status": status,
         "raw_status": str(raw_status) if raw_status is not None else None,
         "delivered": delivered,
-        "delivered_at": epoch_ms_to_iso(raw.get("statusTimestamp")) if delivered else None,
+        "delivered_at": epoch_ms_to_iso(raw.get("statusTimestamp"))
+        if delivered
+        else None,
         # Neither the summary nor the enrichment record carries an ETA: a
         # delivered parcel showed no such field, and ``statusEndTimestamp``
         # above has never been populated.

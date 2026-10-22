@@ -1,4 +1,5 @@
 """Calendar platform for the Swiss Post parcel tracker integration."""
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -20,17 +21,20 @@ PARALLEL_UPDATES = 0
 _DEFAULT_EVENT_DURATION = timedelta(hours=1)
 
 
-
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: SwissPostConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Swiss Post deliveries calendar from a config entry."""
-    async_add_entities([SwissPostDeliveriesCalendar(entry.runtime_data.coordinator, entry)])
+    async_add_entities(
+        [SwissPostDeliveriesCalendar(entry.runtime_data.coordinator, entry)]
+    )
 
 
-class SwissPostDeliveriesCalendar(CoordinatorEntity[SwissPostCoordinator], CalendarEntity):
+class SwissPostDeliveriesCalendar(
+    CoordinatorEntity[SwissPostCoordinator], CalendarEntity
+):
     """A read-only calendar of expected Swiss Post deliveries.
 
     Each active tracked parcel with a known delivery moment becomes an event.
@@ -62,7 +66,9 @@ class SwissPostDeliveriesCalendar(CoordinatorEntity[SwissPostCoordinator], Calen
 
             barcode = parcel.get("barcode") or ""
             sender = parcel.get("sender")
-            summary = sender or (f"Parcel {barcode}" if barcode else "Swiss Post parcel")
+            summary = sender or (
+                f"Parcel {barcode}" if barcode else "Swiss Post parcel"
+            )
             description_parts = [
                 f"Barcode: {barcode}" if barcode else None,
                 f"Status: {parcel.get('status')}" if parcel.get("status") else None,

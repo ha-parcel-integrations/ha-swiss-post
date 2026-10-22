@@ -1,8 +1,9 @@
 """Swiss Post parcel tracker custom component for Home Assistant."""
+
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
+import logging
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
@@ -50,6 +51,7 @@ def _is_account(entry: ConfigEntry) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: SwissPostConfigEntry) -> bool:
     """Set up Swiss Post from a config entry."""
     if _is_account(entry):
+
         async def async_store_tokens(tokens: dict[str, str]) -> None:
             """Persist the rotated token pair after every refresh."""
             hass.config_entries.async_update_entry(
