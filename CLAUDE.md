@@ -241,6 +241,11 @@ buckets through it, never `coordinator.data` directly.
   `location` with latitude/longitude, and the last event of a delivered parcel
   is the user's doorstep. `build_account_history` drops it, and
   `location`/`latitude`/`longitude` are in the diagnostics redaction set.
+- **`sender` is `summaryDescription`, on incoming parcels only.** It is the
+  app's one-line caption: the sender's name when Swiss Post knows it
+  ("AMAZON EU SARL", #17), otherwise the tracking number reformatted with dots,
+  which is compared away so a number never shows as a sender. On an outgoing
+  parcel the user is the sender, and what the caption then holds is unseen.
 - **The planned day is `deliveryAddress.timeRange`, not `statusEndTimestamp`.**
   `timeRange.from` (repeated under `recipientAddress`, the fallback) was seen on
   a real in-flight parcel at midnight Swiss time, matching the planned delivery

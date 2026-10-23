@@ -160,6 +160,8 @@ def test_normalize_account_parcel_maps_an_in_transit_parcel():
     assert parcel["history"] is None
     assert parcel["planned_from"] is None
     assert parcel["planned_to"] is None
+    # The fixture's summaryDescription is just the tracking number.
+    assert parcel["sender"] is None
 
 
 def test_normalize_account_parcel_reads_the_planned_day_from_the_time_range():
@@ -204,6 +206,25 @@ def test_normalize_account_parcel_plans_nothing_once_delivered_or_at_pickup(
     parcel = normalize_account_parcel(element)
     assert parcel["planned_from"] is None
     assert parcel["planned_to"] is None
+
+
+def test_normalize_account_parcel_reads_the_sender_from_the_summary():
+    element = account_element()
+    element["summaryDescription"] = "AMAZON EU SARL"
+    assert normalize_account_parcel(element)["sender"] == "AMAZON EU SARL"
+
+
+def test_normalize_account_parcel_names_no_sender_on_an_outgoing_parcel():
+    element = account_element(outgoing=True)
+    element["summaryDescription"] = "Someone Else"
+    assert normalize_account_parcel(element)["sender"] is None
+
+
+@pytest.mark.parametrize("summary", [None, "", "  "])
+def test_normalize_account_parcel_names_no_sender_without_a_summary(summary):
+    element = account_element()
+    element["summaryDescription"] = summary
+    assert normalize_account_parcel(element)["sender"] is None
 
 
 def test_normalize_account_parcel_marks_a_completed_parcel_delivered():

@@ -6,10 +6,11 @@ vocabulary are taken from the app's own ``kotlinx.serialization`` models, so
 this is evidence-based rather than guessed.
 
 The overview is a **summary**: it carries status, delivery address, pickup
-office, direction and the planned delivery day, but no weight, dimensions or
-event timeline. Those come from the optional per-parcel enrichment record,
-which :func:`normalize_account_parcel` takes as ``detail`` and merges in. Without it
-those fields stay ``None`` — never omitted, same as every other carrier.
+office, direction, the planned delivery day and the sender's name, but no
+weight, dimensions or event timeline. Those come from the optional per-parcel
+enrichment record, which :func:`normalize_account_parcel` takes as ``detail``
+and merges in. Without it those fields stay ``None`` — never omitted, same as
+every other carrier.
 """
 
 from __future__ import annotations
@@ -30,6 +31,8 @@ from ..parcels import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+_ALPHANUMERIC = re.compile(r"[^0-9A-Za-z]")
 
 # ``mailpieceStatusType`` is the app's own enum (distinct from the public
 # tracking surface's ``globalStatus``). Values confirmed from the APK's
@@ -95,6 +98,24 @@ def _receiver(raw: dict[str, Any]) -> str | None:
         str(part).strip() for part in (detail.get("zip4"), detail.get("city")) if part
     ]
     return " ".join(parts) or None
+
+
+def _sender(raw: dict[str, Any]) -> str | None:
+    """Return the sender's name of an incoming parcel from ``summaryDescription``.
+
+    That is the app's one-line caption: the sender's name when Swiss Post knows
+    it ("AMAZON EU SARL"), otherwise the tracking number reformatted with dots,
+    which is not a sender. On an outgoing parcel the user *is* the sender.
+    """
+    if is_outgoing(raw):
+        return None
+    summary = str(raw.get("summaryDescription") or "").strip()
+    if not summary:
+        return None
+    barcode = str(raw.get("mailpieceId") or "")
+    if _ALPHANUMERIC.sub("", summary).upper() == _ALPHANUMERIC.sub("", barcode).upper():
+        return None
+    return summary
 
 
 def _planned_window(raw: dict[str, Any]) -> tuple[str | None, str | None]:
@@ -292,9 +313,7 @@ def normalize_account_parcel(
     return {
         "carrier": "Swiss Post",
         "barcode": barcode,
-        # The counterparty's name is not in the summary; direction is known
-        # from is_outgoing(), the name is not.
-        "sender": None,
+        "sender": _sender(raw),
         "receiver": _receiver(raw),
         "status": status,
         "raw_status": str(raw_status) if raw_status is not None else None,
