@@ -162,6 +162,50 @@ def test_normalize_account_parcel_maps_an_in_transit_parcel():
     assert parcel["planned_to"] is None
 
 
+def test_normalize_account_parcel_reads_the_planned_day_from_the_time_range():
+    """Only ``from``, at midnight Swiss time — a day-level estimate (#17)."""
+    element = account_element()
+    element["deliveryAddress"]["timeRange"] = {"from": 1793055600000}
+    parcel = normalize_account_parcel(element)
+    assert parcel["planned_from"] == "2026-10-26T23:00:00+00:00"
+    assert parcel["planned_to"] is None
+
+
+def test_normalize_account_parcel_falls_back_to_the_recipient_time_range():
+    element = account_element()
+    element["recipientAddress"] = {
+        "timeRange": {"from": 1793055600000, "to": 1793098800000}
+    }
+    parcel = normalize_account_parcel(element)
+    assert parcel["planned_from"] == "2026-10-26T23:00:00+00:00"
+    assert parcel["planned_to"] == "2026-10-27T11:00:00+00:00"
+
+
+def test_normalize_account_parcel_drops_a_zero_length_time_range():
+    element = account_element()
+    element["deliveryAddress"]["timeRange"] = {
+        "from": 1793055600000,
+        "to": 1793055600000,
+    }
+    assert normalize_account_parcel(element)["planned_to"] is None
+
+
+@pytest.mark.parametrize(
+    ("status", "complete", "pickup_office"),
+    [("DELIVERED", True, None), ("WAITING_FOR_PICKUP", False, "Bern 1")],
+)
+def test_normalize_account_parcel_plans_nothing_once_delivered_or_at_pickup(
+    status, complete, pickup_office
+):
+    element = account_element(
+        status=status, complete=complete, pickup_office=pickup_office
+    )
+    element["deliveryAddress"]["timeRange"] = {"from": 1793055600000}
+    parcel = normalize_account_parcel(element)
+    assert parcel["planned_from"] is None
+    assert parcel["planned_to"] is None
+
+
 def test_normalize_account_parcel_marks_a_completed_parcel_delivered():
     parcel = normalize_account_parcel(
         account_element(status="DELIVERED", complete=True)

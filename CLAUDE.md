@@ -209,9 +209,9 @@ buckets through it, never `coordinator.data` directly.
 - **Letters are excluded** (`mailpieceType == "LETTER"`). Swiss Post has no
   envelope-scan feature like PostNL's, so a letter is just a thinner parcel —
   deliberately filtered rather than surfaced. An unknown type is kept.
-- **The overview is a summary**: no weight, dimensions, ETA window or event
-  timeline. The first three come from a per-parcel enrichment call behind the
-  `account_details` option (see below); no ETA exists on either call.
+- **The overview is a summary**: no weight, dimensions or event timeline.
+  Those come from a per-parcel enrichment call behind the `account_details`
+  option (see below).
 - **`isComplete` is not `delivered`.** It means "this parcel is finished", and a
   **returned** parcel is finished too — mapping it to `delivered` filed parcels
   that went back to the sender as delivered. Only `mailpieceStatusType`
@@ -241,10 +241,14 @@ buckets through it, never `coordinator.data` directly.
   `location` with latitude/longitude, and the last event of a delivered parcel
   is the user's doorstep. `build_account_history` drops it, and
   `location`/`latitude`/`longitude` are in the diagnostics redaction set.
-- **`statusEndTimestamp` is the only ETA candidate in the whole model** and has
-  never been populated. It is *not* mapped to `planned_from`/`planned_to`: on a
-  pickup parcel it could just as easily be the collection deadline. A populated
-  one on an in-flight parcel fires a one-shot report instead.
+- **The planned day is `deliveryAddress.timeRange`, not `statusEndTimestamp`.**
+  `timeRange.from` (repeated under `recipientAddress`, the fallback) was seen on
+  a real in-flight parcel at midnight Swiss time, matching the planned delivery
+  day post.ch shows (#17) — a day-level estimate like the public surface's
+  `calculatedDeliveryDate`. It is not mapped on a pickup parcel, where a range
+  could be the collection window. `statusEndTimestamp` has still never been
+  populated and stays unmapped for the same reason; a populated one on an
+  in-flight parcel fires a one-shot report.
 - **The login is browser paste-back, and that is a feature.** SwissID registers
   one redirect URI, built to open the mobile app, so it bounces to a Post app
   page and the code never stays in the address bar — users copy it from the
@@ -259,9 +263,9 @@ Everything not listed here follows the scaffold exactly.
 
 *Dynamic polling* — unlike most account-less carriers, Swiss Post **does**
 populate `planned_from` even for a same-day `out_for_delivery` parcel:
-`calculatedDeliveryDate` is a day-level estimate every parcel carries. The
-hot/mid split therefore behaves as designed rather than always taking the
-"no `planned_from`" branch.
+`calculatedDeliveryDate` (tracking) and `timeRange.from` (account) are
+day-level estimates. The hot/mid split therefore behaves as designed rather
+than always taking the "no `planned_from`" branch.
 
 ## Running tests
 

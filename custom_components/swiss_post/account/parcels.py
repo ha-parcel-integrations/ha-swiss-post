@@ -6,9 +6,9 @@ vocabulary are taken from the app's own ``kotlinx.serialization`` models, so
 this is evidence-based rather than guessed.
 
 The overview is a **summary**: it carries status, delivery address, pickup
-office and direction, but no weight, dimensions or event timeline. Those come
-from the optional per-parcel enrichment record, which
-:func:`normalize_account_parcel` takes as ``detail`` and merges in. Without it
+office, direction and the planned delivery day, but no weight, dimensions or
+event timeline. Those come from the optional per-parcel enrichment record,
+which :func:`normalize_account_parcel` takes as ``detail`` and merges in. Without it
 those fields stay ``None`` — never omitted, same as every other carrier.
 """
 
@@ -95,6 +95,22 @@ def _receiver(raw: dict[str, Any]) -> str | None:
         str(part).strip() for part in (detail.get("zip4"), detail.get("city")) if part
     ]
     return " ".join(parts) or None
+
+
+def _planned_window(raw: dict[str, Any]) -> tuple[str | None, str | None]:
+    """Return ``(planned_from, planned_to)`` from the address ``timeRange``.
+
+    Seen carrying only ``from``, at midnight Swiss time, matching the "planned
+    delivery" day post.ch shows — so a day-level estimate, like the tracking
+    surface's ``calculatedDeliveryDate``. ``recipientAddress`` repeats it.
+    """
+    for key in ("deliveryAddress", "recipientAddress"):
+        time_range = (raw.get(key) or {}).get("timeRange") or {}
+        planned_from = epoch_ms_to_iso(time_range.get("from"))
+        if planned_from:
+            planned_to = epoch_ms_to_iso(time_range.get("to"))
+            return planned_from, planned_to if planned_to != planned_from else None
+    return None, None
 
 
 def _pickup_point(raw: dict[str, Any]) -> str | None:
@@ -252,9 +268,8 @@ def normalize_account_parcel(
     delivered = status is ParcelStatus.DELIVERED
     pickup = not delivered and status is ParcelStatus.AT_PICKUP_POINT
 
-    # The only ETA candidate in the whole model, and it has never been seen
-    # populated. Anything that fills it is worth a look before it is mapped to
-    # planned_from/planned_to: on a pickup parcel it could just as easily be the
+    # Never seen populated. Anything that fills it is worth a look before it is
+    # mapped to anything: on a pickup parcel it could just as easily be the
     # deadline to collect it as an expected delivery.
     if raw.get("statusEndTimestamp") and not raw.get("isComplete"):
         warn_once(
@@ -268,6 +283,11 @@ def normalize_account_parcel(
         )
 
     enrichment = detail or {}
+    # A time range on a parcel already waiting at the office could be its
+    # collection window rather than a delivery date; only a real one would tell.
+    planned_from, planned_to = (
+        (None, None) if delivered or pickup else _planned_window(raw)
+    )
 
     return {
         "carrier": "Swiss Post",
@@ -282,11 +302,8 @@ def normalize_account_parcel(
         "delivered_at": epoch_ms_to_iso(raw.get("statusTimestamp"))
         if delivered
         else None,
-        # Neither the summary nor the enrichment record carries an ETA: a
-        # delivered parcel showed no such field, and ``statusEndTimestamp``
-        # above has never been populated.
-        "planned_from": None,
-        "planned_to": None,
+        "planned_from": planned_from,
+        "planned_to": planned_to,
         "pickup": pickup,
         "pickup_point": _pickup_point(raw) if pickup else None,
         "url": (
