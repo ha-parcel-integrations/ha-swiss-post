@@ -882,3 +882,31 @@ async def test_account_coordinator_polls_at_the_steady_cadence(hass):
     coordinator, _ = await _refresh(hass, overview_response())
     assert coordinator.current_tier_minutes == MID_INTERVAL_MINUTES
     assert coordinator.last_success_time is not None
+
+
+async def test_a_parcel_the_delivered_list_leaves_out_still_fires_delivered(hass):
+    """The retention option limits the delivered sensor, never the events."""
+    entry = _account_entry(**{CONF_DELIVERED_FILTER_AMOUNT: 1})
+    entry.add_to_hass(hass)
+    client = MagicMock()
+    client.async_get_overview = AsyncMock(
+        return_value=overview_response(
+            in_progress=[account_element("111"), account_element("222")]
+        )
+    )
+    coordinator = SwissPostAccountCoordinator(hass, client, entry)
+    await coordinator.async_refresh()
+
+    delivered: list = []
+    hass.bus.async_listen(f"{DOMAIN}_parcel_delivered", delivered.append)
+    client.async_get_overview.return_value = overview_response(
+        completed=[
+            account_element("111", status="DELIVERED", complete=True),
+            account_element("222", status="DELIVERED", complete=True),
+        ]
+    )
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert sorted(e.data["barcode"] for e in delivered) == ["111", "222"]
+    assert len(coordinator.data["incoming_delivered"]) == 1

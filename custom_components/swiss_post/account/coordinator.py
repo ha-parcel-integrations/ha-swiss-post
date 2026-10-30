@@ -188,25 +188,25 @@ class SwissPostAccountCoordinator(DataUpdateCoordinator[dict[str, list[dict]]]):
         incoming_active = sort_parcels_by_ts(
             [p for p in incoming if not p["delivered"]], "planned_from"
         )
+        incoming_delivered_sorted = sort_parcels_by_ts(
+            [p for p in incoming if p["delivered"]], "delivered_at", descending=True
+        )
         incoming_delivered = apply_delivered_filter(
-            sort_parcels_by_ts(
-                [p for p in incoming if p["delivered"]], "delivered_at", descending=True
-            ),
-            self.config_entry,
+            incoming_delivered_sorted, self.config_entry
         )
         outgoing_active = sort_parcels_by_ts(
             [p for p in outgoing if not p["delivered"]], "planned_from"
         )
+        outgoing_delivered_sorted = sort_parcels_by_ts(
+            [p for p in outgoing if p["delivered"]], "delivered_at", descending=True
+        )
         outgoing_delivered = apply_delivered_filter(
-            sort_parcels_by_ts(
-                [p for p in outgoing if p["delivered"]], "delivered_at", descending=True
-            ),
-            self.config_entry,
+            outgoing_delivered_sorted, self.config_entry
         )
 
-        # Incoming = active + delivered, combined so the transition to delivered
-        # is visible in one diff — same shape the tracking coordinator diffs.
-        seen_incoming = incoming_active + incoming_delivered
+        # Events and remembered state cover every parcel; the retention option
+        # only limits what the delivered sensor shows.
+        seen_incoming = incoming_active + incoming_delivered_sorted
         fire_incoming_change_events(
             self.hass,
             seen_incoming,
@@ -217,7 +217,7 @@ class SwissPostAccountCoordinator(DataUpdateCoordinator[dict[str, list[dict]]]):
         self._known_state = snapshot_states(seen_incoming)
         self._known_delivery_times = snapshot_delivery_times(seen_incoming)
 
-        seen_outgoing = outgoing_active + outgoing_delivered
+        seen_outgoing = outgoing_active + outgoing_delivered_sorted
         fire_outgoing_change_events(
             self.hass, seen_outgoing, self._known_outgoing_state, device_id
         )
