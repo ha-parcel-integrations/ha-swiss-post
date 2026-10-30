@@ -158,6 +158,7 @@ Standard HA removal applies: **Settings → Devices & Services → Swiss Post �
 | `sensor.swiss_post_delivered_parcels` | Recently delivered parcels (see the retention option) |
 | `sensor.swiss_post_outgoing_parcels` | **Account hubs only:** parcels you sent that are still on their way |
 | `sensor.swiss_post_outgoing_delivered_parcels` | **Account hubs only:** parcels you sent that have arrived (same retention option) |
+| `calendar.swiss_post_deliveries` | Read-only calendar of expected deliveries, no extra API calls |
 | `sensor.swiss_post_last_successful_update` | Diagnostic: when Swiss Post was last polled successfully |
 
 A delivered parcel moves from its per-parcel sensor to the delivered sensor automatically.
@@ -237,7 +238,7 @@ logger:
 
 - **A parcel shows `unknown`** — Swiss Post has not scanned it yet (their API returns nothing at all until the first scan), the parcel is still with a foreign carrier, or the code is wrong. It fills in automatically once Swiss Post picks it up.
 - **"Swiss Post has no data for tracking code …"** — the same thing, said in the log. The parcel stays tracked; nothing needs doing unless the code is a typo.
-- **A status logs "Unrecognised Swiss Post status"**, or any of the other warnings asking you to report something — please [open an issue](https://github.com/ha-parcel-integrations/ha-swiss-post/issues/new) with the logged line. This integration is still below 1.0: the status list and the delivery-window fields were confirmed against a small number of real parcels, and every gap is deliberately noisy so it gets fixed.
+- **A status logs "Unrecognised Swiss Post status"**, or any of the other warnings asking you to report something — please [open an issue](https://github.com/ha-parcel-integrations/ha-swiss-post/issues/new?template=unrecognised_status.yml) with the logged line. This integration is still below 1.0: the status list and the delivery-window fields were confirmed against a small number of real parcels, and every gap is deliberately noisy so it gets fixed.
 
 ## Related integrations
 
