@@ -113,6 +113,10 @@ def test_to_iso_timestamp_normalises_both_surfaces():
     assert to_iso_timestamp("not-a-date") == "not-a-date"
 
 
+def test_format_dimensions_rounds_the_text():
+    assert format_dimensions(27.9, 5.1, 27.9)["text"] == "28 x 5 x 28 cm"
+
+
 def test_format_dimensions_needs_all_three_axes():
     assert format_dimensions(30, 20, 10) == {
         "length": 30,
@@ -234,7 +238,7 @@ def test_normalize_converts_weight_and_dimensions_to_the_canonical_units():
         "length": 40.0,
         "width": 25.0,
         "height": 15.5,
-        "text": "40 x 25 x 15 cm",
+        "text": "40 x 25 x 16 cm",
     }
 
 
@@ -250,7 +254,7 @@ def test_normalize_sorts_the_dimensions_regardless_of_payload_order():
         "length": 40.0,
         "width": 25.0,
         "height": 15.5,
-        "text": "40 x 25 x 15 cm",
+        "text": "40 x 25 x 16 cm",
     }
     for permutation in ((400, 250, 155), (155, 400, 250), (250, 155, 400)):
         raw = delivered_sample()

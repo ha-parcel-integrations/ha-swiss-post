@@ -306,7 +306,7 @@ def test_enrichment_parses_the_formatted_weight_and_dimensions():
         "length": 40.0,
         "width": 25.0,
         "height": 15.5,
-        "text": "40 x 25 x 15 cm",
+        "text": "40 x 25 x 16 cm",
     }
     # The whole enrichment record stays available under raw.
     assert parcel["raw"]["detail"]["mailpieceStatus"]["status"] == "DELIVERED"
