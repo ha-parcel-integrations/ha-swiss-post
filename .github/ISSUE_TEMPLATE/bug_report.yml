@@ -28,6 +28,18 @@ body:
     validations:
       required: true
 
+  - type: dropdown
+    id: source
+    attributes:
+      label: Which Swiss Post setup are you using?
+      description: The source you picked during setup, shown on the integration's entry under Settings → Devices & services → Swiss Post.
+      options:
+        - SwissID account (automatic import)
+        - Tracking codes
+        - Not sure
+    validations:
+      required: true
+
   - type: textarea
     id: what-happened
     attributes:
