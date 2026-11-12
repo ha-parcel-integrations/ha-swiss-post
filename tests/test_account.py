@@ -19,6 +19,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.swiss_post.account.client import (
     SwissPostAccountApiError,
     SwissPostAccountClient,
+    SwissPostAccountForbidden,
     SwissPostAccountInvalidAuth,
     SwissPostAccountReauthRequired,
     decode_jwt_claims,
@@ -604,6 +605,54 @@ async def test_overview_gives_up_after_a_second_rejection():
         await client.async_get_overview()
 
 
+async def test_a_refused_account_is_not_a_reauth():
+    """A 403 means the token validated and the account was refused anyway.
+
+    Reported with a SwissID linked to both a private and a business profile
+    (#20): raising a reauth there walks the user through a fresh login that
+    lands on the same refusal, so the entry just retries instead.
+    """
+    session = _session(
+        gets=[
+            _response(
+                403,
+                {
+                    "type": "urn:ch:post:app:problem:forbidden",
+                    "errorType": "USER_NOT_AUTHORIZED",
+                    "problemCode": "MT|NAU",
+                    "title": "Hans Muster is not authorized",
+                },
+            )
+        ],
+        posts=[_response(200, _token_body())],
+    )
+    client = SwissPostAccountClient(
+        session, id_token=_fresh_id_token(), refresh_token="rt-1"
+    )
+    with pytest.raises(SwissPostAccountForbidden) as err:
+        await client.async_get_overview()
+    # The codes say why it refused; the prose could name the account holder.
+    assert "USER_NOT_AUTHORIZED" in str(err.value)
+    assert "MT|NAU" in str(err.value)
+    assert "Hans Muster" not in str(err.value)
+    assert session.get.call_count == 1  # no retry, and no rotation of the pair
+    assert not session.post.called
+
+
+async def test_a_rejected_id_token_reports_what_the_inbox_said():
+    session = _session(
+        gets=[_response(401, {"errorType": "INVALID_TOKEN"}), _response(401, None)],
+        posts=[_response(200, _token_body())],
+    )
+    client = SwissPostAccountClient(
+        session, id_token=_fresh_id_token(), refresh_token="rt-1"
+    )
+    with pytest.raises(SwissPostAccountReauthRequired) as err:
+        await client.async_get_overview()
+    assert "HTTP 401" in str(err.value)
+    assert "no problem code" in str(err.value)
+
+
 async def test_overview_server_error_is_an_api_error():
     client = SwissPostAccountClient(
         _session(gets=[_response(503)]),
@@ -864,6 +913,21 @@ async def test_coordinator_surfaces_reauth(hass):
     coordinator = SwissPostAccountCoordinator(hass, client, entry)
     with pytest.raises(ConfigEntryAuthFailed):
         await coordinator._async_update_data()
+
+
+async def test_coordinator_retries_a_refused_account_instead_of_asking_to_sign_in(
+    hass,
+):
+    entry = _account_entry()
+    entry.add_to_hass(hass)
+    client = MagicMock()
+    client.async_get_overview = AsyncMock(
+        side_effect=SwissPostAccountForbidden("inbox refused this account (HTTP 403)")
+    )
+    coordinator = SwissPostAccountCoordinator(hass, client, entry)
+    with pytest.raises(UpdateFailed) as err:
+        await coordinator._async_update_data()
+    assert "HTTP 403" in str(err.value)
 
 
 async def test_coordinator_wraps_an_api_error_as_update_failed(hass):

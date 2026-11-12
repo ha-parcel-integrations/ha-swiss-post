@@ -39,6 +39,7 @@ from ..parcels import apply_delivered_filter, sort_parcels_by_ts
 from .client import (
     SwissPostAccountApiError,
     SwissPostAccountClient,
+    SwissPostAccountForbidden,
     SwissPostAccountReauthRequired,
 )
 from .parcels import is_letter, is_outgoing, normalize_account_parcel
@@ -151,6 +152,14 @@ class SwissPostAccountCoordinator(DataUpdateCoordinator[dict[str, list[dict]]]):
             # asking the user to sign in again.
             raise ConfigEntryAuthFailed(
                 "Swiss Post account needs to be signed in again"
+            ) from err
+        except SwissPostAccountForbidden as err:
+            # Deliberately not ConfigEntryAuthFailed: the token validated and
+            # the account was refused anyway, so a reauth prompt would send the
+            # user through a login that lands on the same refusal.
+            raise UpdateFailed(
+                f"Swiss Post refused this account's inbox ({err}); "
+                "signing in again will not change that"
             ) from err
         except SwissPostAccountApiError as err:
             raise UpdateFailed("Unable to update Swiss Post account inbox") from err

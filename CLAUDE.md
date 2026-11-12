@@ -199,6 +199,15 @@ buckets through it, never `coordinator.data` directly.
 - **The bearer is the JWT `id_token`, not the opaque `access_token`.** The inbox
   rejects the access token as `"Malformed token"`. It also wants any
   `x-device-id` UUID (generated once per entry).
+- **A `401` from the inbox is a token problem; a `403` is not.** The id_token
+  is rejected with `401 invalid_token`, so that is the only status that earns a
+  reauth. A `403` means the token validated and the account was refused anyway
+  (reported for a SwissID linked to a private *and* a business profile, #20) —
+  it raises `SwissPostAccountForbidden` and surfaces as `UpdateFailed`, because
+  a reauth prompt would walk the user through a login that lands on the same
+  refusal. Both carry the RFC 7807 `errorType`/`problemCode` of the body;
+  `title`/`detail` are free text that can name the account holder and are never
+  logged.
 - **The `refresh_token` rotates on every refresh.** `__init__.py` persists the
   new pair to the config entry via a token callback — drop that and the chain is
   lost on the next restart.

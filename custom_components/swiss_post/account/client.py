@@ -64,6 +64,36 @@ class SwissPostAccountReauthRequired(SwissPostAccountApiError):
     """The stored refresh token can no longer be exchanged — needs re-login."""
 
 
+class SwissPostAccountForbidden(SwissPostAccountApiError):
+    """The inbox accepted the token but refuses to serve this account."""
+
+
+def _problem_code(payload: Any) -> str:
+    """Return the RFC 7807 code fields of an error body, never its prose.
+
+    The inbox answers failures as ``urn:ch:post:app:problem:…`` bodies whose
+    ``errorType``/``problemCode``/``errorCode`` say *why* it refused. Only those
+    three are read: ``title``/``detail`` are free text that could name the user.
+    """
+    if not isinstance(payload, dict):
+        return "no problem code"
+    parts = [
+        f"{key}={payload[key]}"
+        for key in ("errorType", "problemCode", "errorCode")
+        if isinstance(payload.get(key), (str, int))
+    ]
+    return ", ".join(parts) if parts else "no problem code"
+
+
+async def _problem(response: aiohttp.ClientResponse) -> str:
+    """Describe a failed response by status and problem code alone."""
+    try:
+        payload = await response.json(content_type=None)
+    except (ValueError, aiohttp.ClientError):
+        payload = None
+    return f"HTTP {response.status}, {_problem_code(payload)}"
+
+
 def _pkce_pair() -> tuple[str, str]:
     """Return a ``(verifier, S256 challenge)`` PKCE pair."""
     verifier = base64.urlsafe_b64encode(secrets.token_bytes(48)).rstrip(b"=").decode()
@@ -248,13 +278,22 @@ class SwissPostAccountClient:
                 "Accept": "application/json",
             },
         ) as response:
-            if response.status in (401, 403):
+            if response.status == 401:
                 raise SwissPostAccountReauthRequired(
-                    "inbox rejected the id_token", status_code=response.status
+                    f"inbox rejected the id_token ({await _problem(response)})",
+                    status_code=response.status,
+                )
+            if response.status == 403:
+                # Not a token problem: the token passed validation and the
+                # account was still refused, so signing in again cannot help.
+                raise SwissPostAccountForbidden(
+                    f"inbox refused this account ({await _problem(response)})",
+                    status_code=response.status,
                 )
             if response.status != 200:
                 raise SwissPostAccountApiError(
-                    "inbox request failed", status_code=response.status
+                    f"inbox request failed ({await _problem(response)})",
+                    status_code=response.status,
                 )
             try:
                 payload = await response.json(content_type=None)

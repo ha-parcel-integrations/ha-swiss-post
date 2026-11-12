@@ -238,6 +238,7 @@ logger:
 
 - **A parcel shows `unknown`** — Swiss Post has not scanned it yet (their API returns nothing at all until the first scan), the parcel is still with a foreign carrier, or the code is wrong. It fills in automatically once Swiss Post picks it up.
 - **"Swiss Post has no data for tracking code …"** — the same thing, said in the log. The parcel stays tracked; nothing needs doing unless the code is a typo.
+- **"Swiss Post refused this account's inbox"** — the login worked and Swiss Post still refused to hand over the parcel list, so signing in again will not help. This has been reported for a SwissID linked to both a private and a business profile ([#20](https://github.com/ha-parcel-integrations/ha-swiss-post/issues/20)); the logged line names the code Swiss Post sent back, so please add it to that issue. A tracking hub (manual codes) is unaffected.
 - **A status logs "Unrecognised Swiss Post status"**, or any of the other warnings asking you to report something — please [open an issue](https://github.com/ha-parcel-integrations/ha-swiss-post/issues/new?template=unrecognised_status.yml) with the logged line. This integration is still below 1.0: the status list and the delivery-window fields were confirmed against a small number of real parcels, and every gap is deliberately noisy so it gets fixed.
 
 ## Related integrations
