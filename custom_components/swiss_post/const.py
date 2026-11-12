@@ -194,6 +194,24 @@ ACCOUNT_DETAIL_CONCURRENCY = 5
 CONF_ACCOUNT_DETAILS = "account_details"
 DEFAULT_ACCOUNT_DETAILS = False
 
+# Swiss Post names a recoverable refusal in a response header rather than in
+# the status code. A SwissID that is linked to more than one Post profile is
+# refused with ``KLP_SHOW_PROFILE_CHOOSER`` and a body listing the profiles,
+# until the chosen one rides along on every call as ``x-klp-profile``. The two
+# other values are dead ends for an unattended integration: the account has no
+# private profile at all, or the terms have to be accepted in the Post app.
+ACCOUNT_PROBLEM_HEADER = "x-problem-id"
+ACCOUNT_PROFILE_HEADER = "x-klp-profile"
+PROBLEM_SHOW_PROFILE_CHOOSER = "KLP_SHOW_PROFILE_CHOOSER"
+PROBLEM_NO_PRIVATE_USER = "KLP_NO_PRIVATE_USER"
+PROBLEM_SHOW_GTC = "KLP_SHOW_GTC"
+
+# The profile role this integration picks. A SwissID can also carry employee
+# and admin roles on a company profile; those inboxes are a business's parcels,
+# not the household's, so the private profile is the only one chosen without
+# asking.
+ACCOUNT_PRIVATE_ROLE = "PRIVATE_USER"
+
 # Refresh the id_token this many seconds before it actually expires, so a poll
 # never races the expiry. The id_token lives 3600 s; the refresh_token rotates
 # on every refresh and must be persisted back to the entry each time.
@@ -206,6 +224,9 @@ CONF_ID_TOKEN = "id_token"
 CONF_REFRESH_TOKEN = "refresh_token"
 CONF_DEVICE_ID = "device_id"
 CONF_ACCOUNT_SUB = "account_sub"
+# The Post profile chosen for a multi-profile SwissID, learnt from the inbox's
+# own refusal and sent on every later call.
+CONF_KLP_PROFILE_ID = "klp_profile_id"
 # The account holder's email (from the id_token), used only to name the device
 # and the config entry. Redacted from diagnostics.
 CONF_EMAIL = "email"

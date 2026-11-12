@@ -199,6 +199,20 @@ buckets through it, never `coordinator.data` directly.
 - **The bearer is the JWT `id_token`, not the opaque `access_token`.** The inbox
   rejects the access token as `"Malformed token"`. It also wants any
   `x-device-id` UUID (generated once per entry).
+- **A multi-profile SwissID is refused until a Post profile is chosen.** A
+  SwissID linked to more than one Post profile (a private *and* a company one,
+  #20) is refused on the first inbox call with the response header
+  `x-problem-id: KLP_SHOW_PROFILE_CHOOSER` and a body listing the profiles;
+  every later call must carry the chosen one as `x-klp-profile`. The client
+  picks the **enabled `PRIVATE_USER`** profile — an employee or admin profile is
+  a company's inbox, not the household's — persists its id on the entry and
+  retries once. `KLP_NO_PRIVATE_USER` (business-only SwissID) and
+  `KLP_SHOW_GTC` (terms not accepted in the Post app) are dead ends and say so
+  instead of asking for a new login. Only the `profileId` is read from the
+  refusal; the rest of the entry describes the person or the company.
+  Built from the app's own flow and **not yet confirmed against a real
+  multi-profile account** — the status code that carries the refusal is
+  unknown, so it is keyed on the header, not on the status.
 - **A `401` from the inbox is a token problem; a `403` is not.** The id_token
   is rejected with `401 invalid_token`, so that is the only status that earns a
   reauth. A `403` means the token validated and the account was refused anyway

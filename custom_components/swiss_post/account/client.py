@@ -34,17 +34,24 @@ import aiohttp
 from ..const import (
     ACCOUNT_DETAIL_URL,
     ACCOUNT_OVERVIEW_URL,
+    ACCOUNT_PRIVATE_ROLE,
+    ACCOUNT_PROBLEM_HEADER,
+    ACCOUNT_PROFILE_HEADER,
     ACCOUNT_TOKEN_REFRESH_MARGIN_SECONDS,
     OIDC_AUTHORIZE_URL,
     OIDC_CLIENT_ID,
     OIDC_REDIRECT_URI,
     OIDC_SCOPE,
     OIDC_TOKEN_URL,
+    PROBLEM_NO_PRIVATE_USER,
+    PROBLEM_SHOW_GTC,
+    PROBLEM_SHOW_PROFILE_CHOOSER,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 TokenCallback = Callable[[dict[str, str]], Awaitable[None]]
+ProfileCallback = Callable[[str], Awaitable[None]]
 
 
 class SwissPostAccountApiError(Exception):
@@ -68,6 +75,10 @@ class SwissPostAccountForbidden(SwissPostAccountApiError):
     """The inbox accepted the token but refuses to serve this account."""
 
 
+class _ProfileChosen(Exception):
+    """Internal: a Post profile was picked, so the call can be retried."""
+
+
 def _problem_code(payload: Any) -> str:
     """Return the RFC 7807 code fields of an error body, never its prose.
 
@@ -85,13 +96,37 @@ def _problem_code(payload: Any) -> str:
     return ", ".join(parts) if parts else "no problem code"
 
 
-async def _problem(response: aiohttp.ClientResponse) -> str:
-    """Describe a failed response by status and problem code alone."""
+async def _error_payload(response: aiohttp.ClientResponse) -> Any:
+    """Return a failed response's parsed body, or ``None`` if it has none."""
     try:
-        payload = await response.json(content_type=None)
+        return await response.json(content_type=None)
     except (ValueError, aiohttp.ClientError):
-        payload = None
-    return f"HTTP {response.status}, {_problem_code(payload)}"
+        return None
+
+
+def select_private_profile(payload: Any) -> str | None:
+    """Return the private Post profile's id from a profile-chooser refusal.
+
+    The refusal body lists every profile the SwissID is linked to. Only the
+    enabled private one is picked: an employee or admin profile is a company's
+    parcel inbox, not the household's. Nothing but the id is read — the rest of
+    the entry describes the person or the company.
+    """
+    verification = (
+        payload.get("klpProfileVerification") if isinstance(payload, dict) else None
+    )
+    profiles = verification.get("profiles") if isinstance(verification, dict) else None
+    if not isinstance(profiles, list):
+        return None
+    for profile in profiles:
+        if not isinstance(profile, dict) or profile.get("role") != ACCOUNT_PRIVATE_ROLE:
+            continue
+        if profile.get("enabled") is False:
+            continue
+        profile_id = profile.get("profileId")
+        if isinstance(profile_id, str) and profile_id:
+            return profile_id
+    return None
 
 
 def _pkce_pair() -> tuple[str, str]:
@@ -147,14 +182,18 @@ class SwissPostAccountClient:
         id_token: str | None = None,
         refresh_token: str | None = None,
         device_id: str | None = None,
+        klp_profile_id: str | None = None,
         token_callback: TokenCallback | None = None,
+        profile_callback: ProfileCallback | None = None,
     ) -> None:
         """Initialise the client with entry-owned tokens and a persist hook."""
         self._session = session
         self._id_token = id_token
         self._refresh_token = refresh_token
         self._device_id = device_id
+        self._klp_profile_id = klp_profile_id
         self._token_callback = token_callback
+        self._profile_callback = profile_callback
 
     @staticmethod
     def build_authorize_url() -> tuple[str, str, str]:
@@ -257,7 +296,9 @@ class SwissPostAccountClient:
 
         Refreshes the id_token first when it is close to expiry, and refreshes
         once more and retries on a surprise 401 — a token can still be rejected
-        between the freshness check and the call.
+        between the freshness check and the call. A first call for a SwissID
+        with more than one Post profile is refused until a profile is chosen;
+        that choice is made from the refusal itself and the call retried once.
         """
         if not self._id_token_is_fresh():
             await self.async_refresh()
@@ -266,35 +307,24 @@ class SwissPostAccountClient:
         except SwissPostAccountReauthRequired:
             # Token rejected despite looking fresh — rotate once and retry.
             await self.async_refresh()
-            return await self._overview_request()
+        except _ProfileChosen:
+            # The retry now carries the profile header, so the same refusal
+            # cannot repeat: the picker only runs while no profile is known.
+            pass
+        return await self._overview_request()
 
     async def _overview_request(self) -> dict[str, Any]:
         """Perform the authenticated overview GET on the current id_token."""
-        async with self._session.get(
-            ACCOUNT_OVERVIEW_URL,
-            headers={
-                "Authorization": f"Bearer {self._id_token}",
-                "x-device-id": self._device_id or "",
-                "Accept": "application/json",
-            },
-        ) as response:
-            if response.status == 401:
-                raise SwissPostAccountReauthRequired(
-                    f"inbox rejected the id_token ({await _problem(response)})",
-                    status_code=response.status,
-                )
-            if response.status == 403:
-                # Not a token problem: the token passed validation and the
-                # account was still refused, so signing in again cannot help.
-                raise SwissPostAccountForbidden(
-                    f"inbox refused this account ({await _problem(response)})",
-                    status_code=response.status,
-                )
+        headers = {
+            "Authorization": f"Bearer {self._id_token}",
+            "x-device-id": self._device_id or "",
+            "Accept": "application/json",
+        }
+        if self._klp_profile_id:
+            headers[ACCOUNT_PROFILE_HEADER] = self._klp_profile_id
+        async with self._session.get(ACCOUNT_OVERVIEW_URL, headers=headers) as response:
             if response.status != 200:
-                raise SwissPostAccountApiError(
-                    f"inbox request failed ({await _problem(response)})",
-                    status_code=response.status,
-                )
+                await self._raise_for_refusal(response)
             try:
                 payload = await response.json(content_type=None)
             except ValueError as err:
@@ -302,6 +332,55 @@ class SwissPostAccountClient:
         if not isinstance(payload, dict):
             raise SwissPostAccountApiError("inbox payload was not a JSON object")
         return payload
+
+    async def _raise_for_refusal(self, response: aiohttp.ClientResponse) -> None:
+        """Turn a refused inbox call into the error that fits its cause.
+
+        Swiss Post names the cause in the ``x-problem-id`` response header, and
+        it is what tells a recoverable refusal (a profile still to be chosen)
+        apart from a dead token or a dead end.
+        """
+        payload = await _error_payload(response)
+        problem = response.headers.get(ACCOUNT_PROBLEM_HEADER) or ""
+        detail = f"HTTP {response.status}, {problem or _problem_code(payload)}"
+
+        if problem == PROBLEM_SHOW_PROFILE_CHOOSER and not self._klp_profile_id:
+            profile_id = select_private_profile(payload)
+            if profile_id is None:
+                raise SwissPostAccountForbidden(
+                    f"inbox listed no private Post profile to use ({detail})",
+                    status_code=response.status,
+                )
+            _LOGGER.debug("Swiss Post: using the private Post profile of this SwissID")
+            self._klp_profile_id = profile_id
+            if self._profile_callback is not None:
+                await self._profile_callback(profile_id)
+            raise _ProfileChosen
+        if problem == PROBLEM_NO_PRIVATE_USER:
+            raise SwissPostAccountForbidden(
+                f"this SwissID has no private Post profile ({detail})",
+                status_code=response.status,
+            )
+        if problem == PROBLEM_SHOW_GTC:
+            raise SwissPostAccountForbidden(
+                f"Swiss Post wants its terms accepted in the Post app first ({detail})",
+                status_code=response.status,
+            )
+        if response.status == 401:
+            raise SwissPostAccountReauthRequired(
+                f"inbox rejected the id_token ({detail})",
+                status_code=response.status,
+            )
+        if response.status == 403:
+            # Not a token problem: the token passed validation and the account
+            # was still refused, so signing in again cannot help.
+            raise SwissPostAccountForbidden(
+                f"inbox refused this account ({detail})",
+                status_code=response.status,
+            )
+        raise SwissPostAccountApiError(
+            f"inbox request failed ({detail})", status_code=response.status
+        )
 
     async def async_get_detail(self, mailpiece_id: str) -> dict[str, Any] | None:
         """Return the full per-parcel record, or ``None`` when there is none.

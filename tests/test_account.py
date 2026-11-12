@@ -23,6 +23,7 @@ from custom_components.swiss_post.account.client import (
     SwissPostAccountInvalidAuth,
     SwissPostAccountReauthRequired,
     decode_jwt_claims,
+    select_private_profile,
 )
 from custom_components.swiss_post.account.coordinator import SwissPostAccountCoordinator
 from custom_components.swiss_post.account.parcels import (
@@ -67,11 +68,11 @@ def _fresh_id_token() -> str:
     return _jwt({"sub": "user-1", "exp": int(time.time()) + 3600})
 
 
-def _response(status: int, body: object = None):
+def _response(status: int, body: object = None, headers: dict | None = None):
     """Build a mock aiohttp response context manager."""
     response = AsyncMock()
     response.status = status
-    response.headers = CIMultiDict()
+    response.headers = CIMultiDict(headers or {})
     if isinstance(body, str):
         response.json = AsyncMock(side_effect=json.JSONDecodeError("x", body, 0))
     else:
@@ -605,6 +606,123 @@ async def test_overview_gives_up_after_a_second_rejection():
         await client.async_get_overview()
 
 
+def _chooser_body(*profiles: dict) -> dict:
+    """A profile-chooser refusal body, as the app's own models describe it."""
+    return {
+        "errorType": "SHOW_PROFILE_CHOOSER",
+        "klpProfileVerification": {"profiles": list(profiles)},
+    }
+
+
+def _profile(profile_id: str, role: str, *, enabled: bool = True) -> dict:
+    return {
+        "profileId": profile_id,
+        "descriptionText": "Hans Muster",
+        "enabled": enabled,
+        "role": role,
+        "currentGtcAccepted": True,
+    }
+
+
+async def test_a_second_post_profile_is_chosen_and_the_call_retried():
+    """A SwissID with a private and a business profile (#20).
+
+    The inbox refuses the first call with ``x-problem-id:
+    KLP_SHOW_PROFILE_CHOOSER`` and lists the profiles; the private one is
+    picked, persisted and sent as ``x-klp-profile`` from then on.
+    """
+    refusal = _response(
+        403,
+        _chooser_body(
+            _profile("biz-1", "EMPLOYEE"),
+            _profile("priv-1", "PRIVATE_USER"),
+        ),
+        headers={"x-problem-id": "KLP_SHOW_PROFILE_CHOOSER"},
+    )
+    session = _session(gets=[refusal, _response(200, overview_response())])
+    stored: list[str] = []
+    client = SwissPostAccountClient(
+        session,
+        id_token=_fresh_id_token(),
+        refresh_token="rt-1",
+        device_id="dev-1",
+        profile_callback=AsyncMock(side_effect=lambda p: stored.append(p)),
+    )
+    assert await client.async_get_overview() == overview_response()
+    assert stored == ["priv-1"]
+    assert session.get.call_args.kwargs["headers"]["x-klp-profile"] == "priv-1"
+    # The refusal is not a token problem, so the pair is never rotated for it.
+    assert not session.post.called
+
+
+async def test_a_business_only_swissid_is_refused_without_a_reauth():
+    session = _session(
+        gets=[
+            _response(
+                403,
+                {"errorType": "NO_PRIVATE_USER"},
+                headers={"x-problem-id": "KLP_NO_PRIVATE_USER"},
+            )
+        ]
+    )
+    client = SwissPostAccountClient(
+        session, id_token=_fresh_id_token(), refresh_token="rt-1"
+    )
+    with pytest.raises(SwissPostAccountForbidden) as err:
+        await client.async_get_overview()
+    assert "no private Post profile" in str(err.value)
+
+
+async def test_unaccepted_terms_say_so_instead_of_asking_for_a_login():
+    session = _session(
+        gets=[_response(403, None, headers={"x-problem-id": "KLP_SHOW_GTC"})]
+    )
+    client = SwissPostAccountClient(
+        session, id_token=_fresh_id_token(), refresh_token="rt-1"
+    )
+    with pytest.raises(SwissPostAccountForbidden) as err:
+        await client.async_get_overview()
+    assert "Post app" in str(err.value)
+
+
+async def test_a_chooser_without_a_private_profile_is_refused():
+    session = _session(
+        gets=[
+            _response(
+                403,
+                _chooser_body(_profile("priv-1", "PRIVATE_USER", enabled=False)),
+                headers={"x-problem-id": "KLP_SHOW_PROFILE_CHOOSER"},
+            )
+        ]
+    )
+    client = SwissPostAccountClient(
+        session, id_token=_fresh_id_token(), refresh_token="rt-1"
+    )
+    with pytest.raises(SwissPostAccountForbidden):
+        await client.async_get_overview()
+
+
+def test_select_private_profile_reads_only_an_enabled_private_entry():
+    assert select_private_profile(_chooser_body(_profile("p", "PRIVATE_USER"))) == "p"
+    assert select_private_profile(_chooser_body(_profile("p", "SUPER_ADMIN"))) is None
+    assert select_private_profile({"klpProfileVerification": {"profiles": "x"}}) is None
+    assert select_private_profile({}) is None
+    assert select_private_profile(None) is None
+    assert select_private_profile(_chooser_body({"role": "PRIVATE_USER"})) is None
+
+
+async def test_a_known_profile_rides_along_from_the_first_call():
+    session = _session(gets=[_response(200, overview_response())])
+    client = SwissPostAccountClient(
+        session,
+        id_token=_fresh_id_token(),
+        refresh_token="rt-1",
+        klp_profile_id="priv-1",
+    )
+    await client.async_get_overview()
+    assert session.get.call_args.kwargs["headers"]["x-klp-profile"] == "priv-1"
+
+
 async def test_a_refused_account_is_not_a_reauth():
     """A 403 means the token validated and the account was refused anyway.
 
@@ -641,7 +759,11 @@ async def test_a_refused_account_is_not_a_reauth():
 
 async def test_a_rejected_id_token_reports_what_the_inbox_said():
     session = _session(
-        gets=[_response(401, {"errorType": "INVALID_TOKEN"}), _response(401, None)],
+        gets=[
+            _response(401, {"errorType": "INVALID_TOKEN"}),
+            # An HTML error page is still a rejection, not a crash.
+            _response(401, "<html>"),
+        ],
         posts=[_response(200, _token_body())],
     )
     client = SwissPostAccountClient(

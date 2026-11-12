@@ -10,6 +10,7 @@ from custom_components.swiss_post.account.client import SwissPostAccountReauthRe
 from custom_components.swiss_post.const import (
     CONF_DEVICE_ID,
     CONF_ID_TOKEN,
+    CONF_KLP_PROFILE_ID,
     CONF_PARCELS,
     CONF_REFRESH_TOKEN,
     CONF_SOURCE,
@@ -223,6 +224,29 @@ async def test_account_entry_persists_rotated_tokens(hass):
 
     assert entry.data[CONF_ID_TOKEN] == "idt-2"
     assert entry.data[CONF_REFRESH_TOKEN] == "rt-2"
+
+
+async def test_account_entry_persists_the_chosen_post_profile(hass):
+    """A multi-profile SwissID picks a profile once; it must survive a restart."""
+
+    entry = _account_entry()
+    entry.add_to_hass(hass)
+
+    overview = {"inProgress": [], "completed": [], "standaloneTaxCards": []}
+
+    async def _fake_overview(self):
+        await self._profile_callback("priv-1")
+        return overview
+
+    with patch(
+        "custom_components.swiss_post.account.client.SwissPostAccountClient"
+        ".async_get_overview",
+        new=_fake_overview,
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert entry.data[CONF_KLP_PROFILE_ID] == "priv-1"
 
 
 async def test_account_entry_starts_reauth_when_the_chain_is_dead(hass):

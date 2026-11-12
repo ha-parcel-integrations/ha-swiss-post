@@ -69,6 +69,7 @@ TO_REDACT = {
     "device_id",
     "account_sub",
     "email",
+    "klp_profile_id",
     "Authorization",
     # account payload (mobserv overview) — identity and address
     "mailpieceId",

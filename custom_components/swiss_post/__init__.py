@@ -18,6 +18,7 @@ from .const import (
     CONF_ACCESS_TOKEN,
     CONF_DEVICE_ID,
     CONF_ID_TOKEN,
+    CONF_KLP_PROFILE_ID,
     CONF_REFRESH_TOKEN,
     CONF_SOURCE,
     DOMAIN,
@@ -64,13 +65,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: SwissPostConfigEntry) ->
                 },
             )
 
+        async def async_store_profile(profile_id: str) -> None:
+            """Persist the Post profile the inbox asked us to choose."""
+            hass.config_entries.async_update_entry(
+                entry, data={**entry.data, CONF_KLP_PROFILE_ID: profile_id}
+            )
+
         client: SwissPostApiClient | SwissPostAccountClient
         account_client = SwissPostAccountClient(
             async_get_clientsession(hass),
             id_token=entry.data.get(CONF_ID_TOKEN),
             refresh_token=entry.data.get(CONF_REFRESH_TOKEN),
             device_id=entry.data.get(CONF_DEVICE_ID),
+            klp_profile_id=entry.data.get(CONF_KLP_PROFILE_ID),
             token_callback=async_store_tokens,
+            profile_callback=async_store_profile,
         )
         client = account_client
         coordinator: SwissPostCoordinator | SwissPostAccountCoordinator = (
