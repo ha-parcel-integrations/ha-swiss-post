@@ -20,15 +20,21 @@ import logging
 import re
 from typing import Any
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 from ..const import ACCOUNT_TRACKING_URL, HISTORY_MAX_EVENTS, ParcelStatus
 from ..parcels import (
     NEW_ISSUE_URL,
     epoch_ms_to_iso,
     format_dimensions,
+    is_pickup,
     parse_iso,
+    planned_for_status,
+    planned_window,
     warn_once,
 )
+
+_ZURICH = ZoneInfo("Europe/Zurich")
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -129,8 +135,9 @@ def _planned_window(raw: dict[str, Any]) -> tuple[str | None, str | None]:
         time_range = (raw.get(key) or {}).get("timeRange") or {}
         planned_from = epoch_ms_to_iso(time_range.get("from"))
         if planned_from:
-            planned_to = epoch_ms_to_iso(time_range.get("to"))
-            return planned_from, planned_to if planned_to != planned_from else None
+            return planned_window(
+                planned_from, epoch_ms_to_iso(time_range.get("to")), zone=_ZURICH
+            )
     return None, None
 
 
@@ -287,7 +294,7 @@ def normalize_account_parcel(
     # back to the sender as delivered. The status enum is the only field that
     # distinguishes the two.
     delivered = status is ParcelStatus.DELIVERED
-    pickup = not delivered and status is ParcelStatus.AT_PICKUP_POINT
+    pickup = is_pickup(bool(_pickup_point(raw)), status)
 
     # Never seen populated. Anything that fills it is worth a look before it is
     # mapped to anything: on a pickup parcel it could just as easily be the
@@ -304,11 +311,7 @@ def normalize_account_parcel(
         )
 
     enrichment = detail or {}
-    # A time range on a parcel already waiting at the office could be its
-    # collection window rather than a delivery date; only a real one would tell.
-    planned_from, planned_to = (
-        (None, None) if delivered or pickup else _planned_window(raw)
-    )
+    planned_from, planned_to = planned_for_status(status, *_planned_window(raw))
 
     return {
         "carrier": "Swiss Post",

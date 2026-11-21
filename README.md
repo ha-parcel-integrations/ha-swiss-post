@@ -155,6 +155,8 @@ Standard HA removal applies: **Settings → Devices & Services → Swiss Post �
 | `sensor.swiss_post_incoming_parcels` | Number of active tracked parcels, full list under the `parcels` attribute |
 | `sensor.swiss_post_parcel_<code>` | One per tracked parcel; state is the canonical status, attributes carry the full normalised parcel |
 | `sensor.swiss_post_next_delivery` | Earliest expected delivery moment across all active parcels |
+| `sensor.swiss_post_en_route_to_pickup_point` | Parcels on their way to a post office, full list under the `parcels` attribute |
+| `sensor.swiss_post_awaiting_pickup` | Parcels waiting at a post office, full list under the `parcels` attribute |
 | `sensor.swiss_post_delivered_parcels` | Recently delivered parcels (see the retention option) |
 | `sensor.swiss_post_outgoing_parcels` | **Account hubs only:** parcels you sent that are still on their way |
 | `sensor.swiss_post_outgoing_delivered_parcels` | **Account hubs only:** parcels you sent that have arrived (same retention option) |

@@ -52,17 +52,17 @@ dimensions all come from the *same* enrichment call, so one option
 (`account_details`) buys all three and the options page shows only that one —
 two switches would misrepresent what the extra requests pay for.
 
-**No `awaiting_pickup` sensor yet — pending a status token seen on the wire,
-not a structural exemption.** Swiss Post does have a pickup-point concept and
-both normalisers derive a `pickup: bool`. On the public surface no
-`globalStatus` value has been confirmed to map to
-`ParcelStatus.AT_PICKUP_POINT` (pickup is inferred from
-`deliveryPostOfficeZip`/`avis`/`displayedAvisCode` instead, one-shot WARNING in
-place). The **account** surface does have the token — `WAITING_FOR_PICKUP`, read
-from the app's own enum — and even names the office (`deliveryAddress.pickupOffice`),
-but it has not been seen on a real parcel yet. Add the sensor once one shows up;
-this is not the same as a locker-less carrier's structural exemption
-(`.github/CONVENTIONS.md`'s pickup-point convention).
+**The `awaiting_pickup` sensor exists because the account surface reaches
+`ParcelStatus.AT_PICKUP_POINT`** (`WAITING_FOR_PICKUP`, read from the app's own
+enum and naming the office via `deliveryAddress.pickupOffice`). It gates on the
+status alone. The public surface has no confirmed pickup token, so there
+`pickup` is inferred from `deliveryPostOfficeZip`/`avis`/`displayedAvisCode`
+(one-shot WARNING in place), and a parcel is counted by the sensor only once a
+status maps to `at_pickup_point`. The `en_route_to_pickup_point` sensor counts
+active parcels with `pickup` true that are not yet at the point (not
+`at_pickup_point`, not `returning`). Pending evidence: no real parcel has shown
+a pickup-point status on the public surface or an en-route pickup parcel, so
+both sensors read 0 until one does.
 
 **One host, two calls.** `service.post.ch/ekp-web` has status, ETA, weight,
 dimensions and the delivery booleans, but the `events` array on the search
@@ -129,8 +129,12 @@ silently disappears or flips to delivered.
 not a sender) and `pickup_point` on anything but a pickup parcel (Swiss Post
 gives the office's postcode, never its name).
 
-**`delivered` comes from the payload's own boolean**, not from a status match —
-it keeps working when an unmapped status token shows up. The status enum is
+**The payload's own `delivered` boolean decides the status** (it is folded in,
+and `delivered` is then `status is DELIVERED`) — it keeps working when an
+unmapped status token shows up. It wins over `at_pickup_point` (an explicit
+delivered signal does), but never over `returning`: on a returned parcel the
+flag reads false, so the code does not claim it means anything there, and the
+payload carries no explicit back-at-sender signal. The status enum is
 mapped from `globalStatus` only; the per-event `Status` on the timeline is
 near-constant (`PST` on almost everything, including the delivery itself) and
 mapping it would mis-file delivered parcels, so history entries keep
@@ -284,6 +288,18 @@ buckets through it, never `coordinator.data` directly.
   SwissID's *native* `api-login` journey was considered and rejected: it only
   works at `qoa1` (password), so anyone with a passkey or enforced 2FA would have
   to weaken their account security. Do not reintroduce it.
+
+## Parcel contract: window, pickup, delivered
+
+- `parcels.py` holds the shared helpers (`planned_window`, `planned_for_status`,
+  `is_pickup`); both sources import them. Windows are read in `Europe/Zurich`:
+  a day estimate covers the whole day, a lone time runs to 23:59:59.
+- `planned_*` are emptied at `at_pickup_point`, `returning` and `delivered`.
+- `pickup` is the office/avis fields (tracking) or `pickupOffice` (account), else
+  a status that reached `at_pickup_point`, so it stays true once collected.
+  `pickup_point` is the office name (account) or its postcode (tracking).
+- `next_delivery` skips a parcel whose window has ended; the calendar shows a
+  whole-day window as an all-day event.
 
 ## Divergences from the scaffold
 

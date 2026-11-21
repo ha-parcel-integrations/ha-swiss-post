@@ -6,6 +6,7 @@ rewrite per carrier) can be tested as plain functions.
 """
 
 from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -283,9 +284,21 @@ def test_normalize_delivered_flag_comes_from_the_payload_boolean():
     raw = delivered_sample()
     raw["globalStatus"] = "SOMETHING_NEW"
     parcel = normalize_parcel(raw)
-    assert parcel["status"] == ParcelStatus.UNKNOWN
+    assert parcel["status"] == ParcelStatus.DELIVERED
     assert parcel["delivered"] is True
     assert parcel["delivered_at"] == "2026-04-16T10:28:29+02:00"
+
+
+def test_normalize_delivered_flag_wins_over_a_pickup_point_status():
+    raw = delivered_sample()
+    raw["globalStatus"] = "SOMETHING_NEW"
+    with patch(
+        "custom_components.swiss_post.tracking.parcels.map_parcel_status",
+        return_value=ParcelStatus.AT_PICKUP_POINT,
+    ):
+        parcel = normalize_parcel(raw)
+    assert parcel["status"] == ParcelStatus.DELIVERED
+    assert parcel["delivered"] is True
 
 
 def test_normalize_active_parcel_uses_the_calculated_delivery_date():
@@ -294,7 +307,7 @@ def test_normalize_active_parcel_uses_the_calculated_delivery_date():
     assert parcel["delivered"] is False
     assert parcel["delivered_at"] is None
     assert parcel["planned_from"] == "2026-04-16T00:00:00+02:00"
-    assert parcel["planned_to"] is None  # a day estimate, not a window
+    assert parcel["planned_to"] == "2026-04-16T23:59:59+02:00"  # the whole day
 
 
 def test_normalize_prefers_a_real_delivery_window(caplog):
@@ -312,7 +325,7 @@ def test_a_standard_delivery_class_is_not_a_delivery_window(caplog):
     window ever seen."""
     parcel = normalize_parcel(letter_sample())
     assert parcel["planned_from"] == "2026-04-16T00:00:00+02:00"  # the day estimate
-    assert parcel["planned_to"] is None
+    assert parcel["planned_to"] == "2026-04-16T23:59:59+02:00"
     assert "delivery window" not in caplog.text
 
 
@@ -337,12 +350,12 @@ def test_is_letter_shipment(raw, expected):
     assert is_letter_shipment(raw) is expected
 
 
-def test_normalize_collapses_point_estimate_to_no_window_end():
+def test_normalize_stretches_a_point_estimate_to_the_end_of_its_day():
     raw = windowed_sample()
     raw["deliveryRange"]["end"] = raw["deliveryRange"]["start"]
     parcel = normalize_parcel(raw)
     assert parcel["planned_from"] == "2026-04-16T13:00:00+02:00"
-    assert parcel["planned_to"] is None
+    assert parcel["planned_to"] == "2026-04-16T23:59:59+02:00"
 
 
 def test_normalize_pickup_parcel_is_inferred_from_the_post_office_fields(caplog):
@@ -357,12 +370,13 @@ def test_normalize_pickup_parcel_is_inferred_from_the_post_office_fields(caplog)
     assert "3011" not in caplog.text
 
 
-def test_normalize_delivered_parcel_is_never_at_a_pickup_point():
+def test_a_delivered_parcel_keeps_its_pickup_point():
     raw = delivered_sample()
     raw["deliveryPostOfficeZip"] = "3011"
     parcel = normalize_parcel(raw)
-    assert parcel["pickup"] is False
-    assert parcel["pickup_point"] is None
+    assert parcel["delivered"] is True
+    assert parcel["pickup"] is True
+    assert parcel["pickup_point"] == "3011"
 
 
 def test_normalize_pending_placeholder():

@@ -14,15 +14,21 @@ from __future__ import annotations
 from datetime import datetime
 import logging
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from ..const import HISTORY_MAX_EVENTS, TRACKING_URL, ParcelStatus
 from ..parcels import (
     NEW_ISSUE_URL,
     format_dimensions,
+    is_pickup,
     parse_iso,
+    planned_for_status,
+    planned_window,
     to_iso_timestamp,
     warn_once,
 )
+
+_ZURICH = ZoneInfo("Europe/Zurich")
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -245,14 +251,11 @@ def _delivery_window(raw: dict) -> tuple[str | None, str | None]:
         )
 
     delivery_range = raw.get("deliveryRange") or {}
-    planned_from = to_iso_timestamp(
-        delivery_range.get("start") or raw.get("calculatedDeliveryDate")
+    return planned_window(
+        delivery_range.get("start") or raw.get("calculatedDeliveryDate"),
+        delivery_range.get("end"),
+        zone=_ZURICH,
     )
-    planned_to = to_iso_timestamp(delivery_range.get("end"))
-    if planned_from and planned_to and parse_iso(planned_to) == parse_iso(planned_from):
-        # Same instant twice is a point estimate, not a window.
-        planned_to = None
-    return planned_from, planned_to
 
 
 def normalize_parcel(raw: dict, *, include_history: bool = False) -> dict:
@@ -267,9 +270,14 @@ def normalize_parcel(raw: dict, *, include_history: bool = False) -> dict:
     status = map_parcel_status(status_code)
     # Prefer the payload's own boolean over the status enum: it is explicit,
     # and it survives an unmapped status token.
-    delivered = bool(raw.get("delivered")) or status is ParcelStatus.DELIVERED
+    # A returning parcel is never overridden: the payload has no back-at-sender
+    # signal and a returned parcel reads delivered false, so a true flag is not
+    # claimed to mean anything for one.
+    if raw.get("delivered") and status is not ParcelStatus.RETURNING:
+        status = ParcelStatus.DELIVERED
+    delivered = status is ParcelStatus.DELIVERED
 
-    planned_from, planned_to = _delivery_window(raw)
+    planned_from, planned_to = planned_for_status(status, *_delivery_window(raw))
 
     pickup_fields = [
         field
@@ -286,9 +294,7 @@ def normalize_parcel(raw: dict, *, include_history: bool = False) -> dict:
             ", ".join(pickup_fields),
             NEW_ISSUE_URL,
         )
-    pickup = not delivered and (
-        status is ParcelStatus.AT_PICKUP_POINT or bool(pickup_fields)
-    )
+    pickup = is_pickup(bool(pickup_fields), status)
     office_zip = raw.get("deliveryPostOfficeZip")
 
     properties = raw.get("physicalProperties") or {}
@@ -306,8 +312,8 @@ def normalize_parcel(raw: dict, *, include_history: bool = False) -> dict:
         "delivered_at": to_iso_timestamp(raw.get("deliveryDate"))
         if delivered
         else None,
-        "planned_from": None if delivered else planned_from,
-        "planned_to": None if delivered else planned_to,
+        "planned_from": planned_from,
+        "planned_to": planned_to,
         "pickup": pickup,
         "pickup_point": str(office_zip) if pickup and office_zip else None,
         "url": tracking_url(tracking_code),

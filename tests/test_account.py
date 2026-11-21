@@ -172,7 +172,7 @@ def test_normalize_account_parcel_reads_the_planned_day_from_the_time_range():
     element["deliveryAddress"]["timeRange"] = {"from": 1793055600000}
     parcel = normalize_account_parcel(element)
     assert parcel["planned_from"] == "2026-10-26T23:00:00+00:00"
-    assert parcel["planned_to"] is None
+    assert parcel["planned_to"] == "2026-10-27T23:59:59+01:00"
 
 
 def test_normalize_account_parcel_falls_back_to_the_recipient_time_range():
@@ -185,13 +185,15 @@ def test_normalize_account_parcel_falls_back_to_the_recipient_time_range():
     assert parcel["planned_to"] == "2026-10-27T11:00:00+00:00"
 
 
-def test_normalize_account_parcel_drops_a_zero_length_time_range():
+def test_normalize_account_parcel_stretches_a_zero_length_time_range():
     element = account_element()
     element["deliveryAddress"]["timeRange"] = {
         "from": 1793055600000,
         "to": 1793055600000,
     }
-    assert normalize_account_parcel(element)["planned_to"] is None
+    assert (
+        normalize_account_parcel(element)["planned_to"] == "2026-10-27T23:59:59+01:00"
+    )
 
 
 @pytest.mark.parametrize(

@@ -1,13 +1,15 @@
 """Tests for Swiss Post sensor property logic."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
 from custom_components.swiss_post.const import ParcelStatus
 from custom_components.swiss_post.sensor import (
+    SwissPostAwaitingPickupSensor,
     SwissPostDeliveredParcelsSensor,
+    SwissPostEnRouteToPickupPointSensor,
     SwissPostIncomingParcelsSensor,
     SwissPostLastUpdateSensor,
     SwissPostNextDeliverySensor,
@@ -36,6 +38,7 @@ def _parcel(
     status: ParcelStatus = ParcelStatus.IN_TRANSIT,
     pickup: bool = False,
     planned_from: str | None = None,
+    planned_to: str | None = None,
 ) -> dict:
     return {
         "carrier": "Swiss Post",
@@ -45,6 +48,7 @@ def _parcel(
         "status": status,
         "pickup": pickup,
         "planned_from": planned_from,
+        "planned_to": planned_to,
     }
 
 
@@ -73,12 +77,12 @@ def test_parcel_sensor_missing_barcode():
 def test_next_delivery_picks_earliest():
     coordinator = _coordinator(
         [
-            _parcel("A", planned_from="2026-05-02T10:00:00Z"),
-            _parcel("B", planned_from="2026-05-01T10:00:00Z"),
+            _parcel("A", planned_from="2099-05-02T10:00:00Z"),
+            _parcel("B", planned_from="2099-05-01T10:00:00Z"),
         ]
     )
     sensor = SwissPostNextDeliverySensor(coordinator, _entry())
-    assert sensor.native_value == datetime(2026, 5, 1, 10, 0, tzinfo=UTC)
+    assert sensor.native_value == datetime(2099, 5, 1, 10, 0, tzinfo=UTC)
     assert sensor.extra_state_attributes["barcode"] == "B"
 
 
@@ -92,7 +96,7 @@ def test_next_delivery_skips_unparseable_moment():
     coordinator = _coordinator(
         [
             _parcel("A", planned_from="not-a-date"),
-            _parcel("B", planned_from="2026-05-01T10:00:00Z"),
+            _parcel("B", planned_from="2099-05-01T10:00:00Z"),
         ]
     )
     sensor = SwissPostNextDeliverySensor(coordinator, _entry())
@@ -201,3 +205,52 @@ def test_every_sensor_has_an_icon_and_a_consistent_unit():
             if "unit_of_measurement" in value
         }
         assert len(units) == 1, f"{path.name} mixes units: {units}"
+
+
+def _in(**delta) -> str:
+    return (datetime.now(UTC) + timedelta(**delta)).isoformat()
+
+
+def test_next_delivery_skips_a_window_that_has_ended():
+    stale = _parcel("A", planned_from=_in(days=-3), planned_to=_in(days=-2))
+    moment_only = _parcel("B", planned_from=_in(hours=-2))
+    sensor = SwissPostNextDeliverySensor(
+        _coordinator([stale, moment_only, _parcel("C", planned_from=_in(days=2))]),
+        _entry(),
+    )
+    assert sensor.extra_state_attributes["barcode"] == "C"
+
+
+def test_next_delivery_keeps_a_window_that_is_still_running():
+    running = _parcel("A", planned_from=_in(hours=-1), planned_to=_in(hours=2))
+    sensor = SwissPostNextDeliverySensor(_coordinator([running]), _entry())
+    assert sensor.extra_state_attributes["barcode"] == "A"
+
+
+def test_awaiting_pickup_counts_only_parcels_at_a_pickup_point():
+    parcels = [
+        _parcel("A", status=ParcelStatus.AT_PICKUP_POINT, pickup=True),
+        _parcel("B", status=ParcelStatus.IN_TRANSIT, pickup=True),
+    ]
+    sensor = SwissPostAwaitingPickupSensor(_coordinator(parcels), _entry())
+    assert sensor.native_value == 1
+    assert [p["barcode"] for p in sensor.extra_state_attributes["parcels"]] == ["A"]
+    assert sensor.unique_id == "e1_awaiting_pickup"
+
+
+def test_awaiting_pickup_zero_without_parcels():
+    sensor = SwissPostAwaitingPickupSensor(_coordinator([]), _entry())
+    assert sensor.native_value == 0
+
+
+def test_en_route_counts_only_active_pickup_parcels_not_yet_at_the_point():
+    parcels = [
+        _parcel("A", status=ParcelStatus.IN_TRANSIT, pickup=True),
+        _parcel("B", status=ParcelStatus.AT_PICKUP_POINT, pickup=True),
+        _parcel("C", status=ParcelStatus.RETURNING, pickup=True),
+        _parcel("D", status=ParcelStatus.IN_TRANSIT, pickup=False),
+    ]
+    sensor = SwissPostEnRouteToPickupPointSensor(_coordinator(parcels), _entry())
+    assert sensor.native_value == 1
+    assert [p["barcode"] for p in sensor.extra_state_attributes["parcels"]] == ["A"]
+    assert sensor.unique_id == "e1_en_route_to_pickup_point"
