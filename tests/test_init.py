@@ -204,7 +204,7 @@ def _account_entry() -> MockConfigEntry:
 
 
 async def test_account_entry_sets_up_and_skips_the_tracking_services(hass):
-    """An account hub discovers its own parcels, so it registers no services."""
+    """An account hub discovers its own parcels, so it registers no tracking services."""
     entry = _account_entry()
     entry.add_to_hass(hass)
 
@@ -222,9 +222,11 @@ async def test_account_entry_sets_up_and_skips_the_tracking_services(hass):
     assert hass.states.get("sensor.swiss_post_me_example_ch_outgoing_parcels")
     # track_parcel belongs to the tracking hub, which this is not.
     assert not hass.services.has_service(DOMAIN, "track_parcel")
+    assert hass.services.has_service(DOMAIN, "update_contents")
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
+    assert not hass.services.has_service(DOMAIN, "update_contents")
 
 
 async def test_account_entry_persists_rotated_tokens(hass):

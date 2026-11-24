@@ -88,6 +88,10 @@
         "tracking_code": {
           "name": "Codice di tracciamento",
           "description": "Il codice di tracciamento Swiss Post."
+        },
+        "contents": {
+          "name": "Contenuto",
+          "description": "Che cosa c'è nel pacco, con parole tue. Richiamando di nuovo l'azione per un pacco monitorato, il contenuto viene sostituito; un testo vuoto lo cancella."
         }
       }
     },
@@ -98,6 +102,24 @@
         "tracking_code": {
           "name": "Codice di tracciamento",
           "description": "Il codice di tracciamento Swiss Post di cui interrompere il tracciamento."
+        }
+      }
+    },
+    "update_contents": {
+      "name": "Aggiorna il contenuto del pacco",
+      "description": "Imposta che cosa c'è in un pacco, con parole tue, per un codice di tracciamento. Un testo vuoto cancella il contenuto.",
+      "fields": {
+        "tracking_code": {
+          "name": "Codice di tracciamento",
+          "description": "Il codice di tracciamento Swiss Post."
+        },
+        "contents": {
+          "name": "Contenuto",
+          "description": "Che cosa c'è nel pacco, con parole tue. Un testo vuoto lo cancella."
+        },
+        "config_entry_id": {
+          "name": "Account",
+          "description": "L'account per cui salvare il valore. Necessario quando nessun account conosce ancora il codice."
         }
       }
     }
@@ -157,6 +179,11 @@
         "name": "Pacchi in uscita consegnati",
         "unit_of_measurement": "pacchi"
       }
+    }
+  },
+  "exceptions": {
+    "update_contents_entry_required": {
+      "message": "Nessun account conosce questo codice. Scegli l'account per cui salvarlo."
     }
   }
 }

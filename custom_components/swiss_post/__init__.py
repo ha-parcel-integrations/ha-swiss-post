@@ -26,6 +26,7 @@ from .const import (
     SOURCE_ACCOUNT,
     SOURCE_TRACKING,
 )
+from .contents import ContentsStore
 from .services import async_setup_services, async_unload_services
 from .tracking.api import SwissPostApiClient
 from .tracking.coordinator import SwissPostCoordinator
@@ -102,6 +103,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: SwissPostConfigEntry) ->
     # whole entry so HA retries it with backoff. A dead refresh chain surfaces
     # as ConfigEntryAuthFailed from the account coordinator, which HA turns into
     # the reauth flow on its own.
+    await coordinator.contents_store.async_load()
     await coordinator.async_config_entry_first_refresh()
 
     entry.runtime_data = SwissPostData(client=client, coordinator=coordinator)
@@ -113,10 +115,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: SwissPostConfigEntry) ->
     # disappear immediately.
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
 
-    # The track_parcel service only makes sense for a tracking hub; the account
-    # inbox discovers its own parcels.
-    if not _is_account(entry):
-        async_setup_services(hass)
+    # track_parcel only makes sense for a tracking hub; the account inbox
+    # discovers its own parcels. update_contents serves every entry.
+    async_setup_services(hass, hub=not _is_account(entry))
 
     return True
 
@@ -132,14 +133,21 @@ async def async_unload_entry(hass: HomeAssistant, entry: SwissPostConfigEntry) -
     """Unload the Swiss Post config entry."""
     if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         return False
-    # The services are shared across tracking hubs, so only remove them once the
-    # last tracking hub is gone — otherwise unloading one would break the others.
-    others_loaded = any(
-        other.entry_id != entry.entry_id
-        and other.state is ConfigEntryState.LOADED
-        and other.data.get(CONF_SOURCE, SOURCE_TRACKING) == SOURCE_TRACKING
+    # Drop a service when the last entry that needs it goes, so unloading one
+    # entry never breaks the others.
+    others = [
+        other
         for other in hass.config_entries.async_entries(DOMAIN)
+        if other.entry_id != entry.entry_id and other.state is ConfigEntryState.LOADED
+    ]
+    hubs_left = any(
+        other.data.get(CONF_SOURCE, SOURCE_TRACKING) == SOURCE_TRACKING
+        for other in others
     )
-    if not _is_account(entry) and not others_loaded:
-        async_unload_services(hass)
+    async_unload_services(hass, hubs_left=hubs_left, entries_left=bool(others))
     return True
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: SwissPostConfigEntry) -> None:
+    """Delete the contents the user set for the removed entry."""
+    await ContentsStore(hass, entry.entry_id).async_remove()

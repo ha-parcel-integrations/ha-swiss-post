@@ -300,6 +300,12 @@ buckets through it, never `coordinator.data` directly.
   `pickup_point` is the office name (account) or its postcode (tracking).
 - `next_delivery` skips a parcel whose window has ended; the calendar shows a
   whole-day window as an all-day event.
+- `contents` is the user's own text (`update_contents`, or the optional field on
+  `track_parcel`), kept per entry in a `Store` and overlaid on every parcel by
+  the coordinators; the carrier fills none. It goes to every loaded entry whose
+  `known_codes` holds the code, so `track_parcel`/`untrack_parcel` register with
+  a tracking hub only while `update_contents` serves account entries too.
+  It titles the calendar event and shows on the `next_delivery` attributes.
 
 ## Divergences from the scaffold
 

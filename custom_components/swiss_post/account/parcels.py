@@ -318,6 +318,7 @@ def normalize_account_parcel(
         "barcode": barcode,
         "sender": _sender(raw),
         "receiver": _receiver(raw),
+        "contents": None,
         "status": status,
         "raw_status": str(raw_status) if raw_status is not None else None,
         "delivered": delivered,

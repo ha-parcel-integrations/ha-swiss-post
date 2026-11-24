@@ -19,11 +19,18 @@ def _coordinator(data: list[dict]) -> MagicMock:
 
 
 def _parcel(
-    barcode, planned_from=None, planned_to=None, pickup=False, pickup_point=None
+    barcode,
+    planned_from=None,
+    planned_to=None,
+    pickup=False,
+    pickup_point=None,
+    contents=None,
+    sender="Example Sender",
 ):
     return {
         "barcode": barcode,
-        "sender": "Example Sender",
+        "sender": sender,
+        "contents": contents,
         "status": "out_for_delivery",
         "planned_from": planned_from,
         "planned_to": planned_to,
@@ -185,3 +192,13 @@ async def test_all_day_events_are_upcoming_and_filtered_by_range():
     end = datetime(2100, 1, 1, tzinfo=UTC)
     events = await cal.async_get_events(MagicMock(), start, end)
     assert {e.uid for e in events} == {"FUTURE"}
+
+
+def test_title_is_contents_then_sender_then_barcode():
+    when = "2099-05-01T10:00:00Z"
+    with_both = _parcel("A", planned_from=when, contents="Running shoes")
+    assert _cal([with_both]).event.summary == "Running shoes"
+    sender_only = _parcel("A", planned_from=when)
+    assert _cal([sender_only]).event.summary == "Example Sender"
+    neither = _parcel("A", planned_from=when, sender=None)
+    assert _cal([neither]).event.summary == "Parcel A"

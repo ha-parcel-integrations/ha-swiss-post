@@ -289,6 +289,10 @@ def test_normalize_account_parcel_publishes_the_canonical_keys():
     """The account source must publish the same contract as the tracking one."""
 
     expected = set(normalize_parcel(delivered_sample()))
+    assert list(normalize_account_parcel(account_element())) == list(
+        normalize_parcel(delivered_sample())
+    )
+    assert normalize_account_parcel(account_element())["contents"] is None
     assert set(normalize_account_parcel(account_element())) == expected
     # The enrichment fills fields; it must never add or drop one.
     assert (

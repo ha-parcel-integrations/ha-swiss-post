@@ -45,7 +45,7 @@ You can run both side by side (one hub each) if you want codes for parcels that 
 - Per-parcel sensor with the canonical status (`registered` / `in_transit` / `out_for_delivery` / `delivered` / …), the carrier's own status text, the expected delivery window and a tracking deep-link
 - Summary sensors: incoming parcels, next delivery, recently delivered parcels — plus outgoing and outgoing-delivered on an account hub
 - Read-only **Deliveries** calendar with the expected delivery windows
-- `swiss_post.track_parcel` / `swiss_post.untrack_parcel` services, so a dashboard button can add a parcel
+- `swiss_post.track_parcel` / `swiss_post.untrack_parcel` services, so a dashboard button can add a parcel, and `swiss_post.update_contents` to note what is in a parcel
 - Events + device triggers for no-code automations (parcel registered, status changed, delivered, delivery time changed, and the outgoing equivalents)
 - Opt-in per-parcel status history — and on an account hub, the weight and size with it
 - Manual refresh button and a diagnostic last-update sensor
@@ -214,8 +214,13 @@ Outgoing parcels deliberately get a smaller event set: a parcel you sent yoursel
 
 | Service | Fields | Description |
 |---|---|---|
-| `swiss_post.track_parcel` | `tracking_code` | Start tracking a parcel |
+| `swiss_post.track_parcel` | `tracking_code`, `contents` (optional) | Start tracking a parcel, optionally noting what is in it |
 | `swiss_post.untrack_parcel` | `tracking_code` | Stop tracking a parcel |
+| `swiss_post.update_contents` | `tracking_code`, `contents`, `config_entry_id` (optional) | Set what is in a parcel, tracked or not; an empty `contents` clears it. It goes to every account or hub that lists the code; name one with `config_entry_id` (needed for a code none lists yet). |
+
+`track_parcel` and `untrack_parcel` act on the tracking-code hub only, and are not registered while only an account is set up, because an account imports its parcels by itself. `update_contents` works with any set-up entry.
+
+The `contents` text you set titles the parcel's calendar event and shows on the next-delivery sensor.
 
 ## Examples
 

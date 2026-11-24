@@ -190,6 +190,7 @@ CANONICAL_KEYS = [
     "barcode",
     "sender",
     "receiver",
+    "contents",
     "status",
     "raw_status",
     "delivered",
@@ -491,8 +492,11 @@ def test_capabilities_are_known_values():
 
 
 def test_capabilities_cover_every_known_field():
-    """Swiss Post's merged two-host payload is the one carrier that fills all six."""
-    assert CAPABILITIES == KNOWN_CAPABILITIES
+    """Swiss Post's merged two-host payload fills every field the carrier can supply.
+
+    ``contents`` is the one it never fills: only the user sets it.
+    """
+    assert KNOWN_CAPABILITIES - {"contents"} == CAPABILITIES
 
 
 # ---------------------------------------------------------------------------

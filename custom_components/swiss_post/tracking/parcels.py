@@ -306,6 +306,7 @@ def normalize_parcel(raw: dict, *, include_history: bool = False) -> dict:
         "barcode": tracking_code,
         "sender": raw.get("sender") or None,
         "receiver": _receiver(raw),
+        "contents": None,
         "status": status,
         "raw_status": raw.get("status") or status_code,
         "delivered": delivered,
