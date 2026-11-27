@@ -16,7 +16,7 @@ from typing import Any
 
 import aiohttp
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -71,6 +71,9 @@ class SwissPostAccountCoordinator(DataUpdateCoordinator[dict[str, list[dict]]]):
         self.contents_store = ContentsStore(hass, entry.entry_id)
         # update_contents asks which entry a code belongs to.
         self.known_codes: frozenset[str] = frozenset()
+        # id(parcel) -> the barcode its contents are stored under, so a contents
+        # change can be re-applied without a poll.
+        self._parcel_codes: dict[int, str] = {}
         # None on the first refresh deliberately suppresses historical events.
         self._known_state: dict[str, ParcelStatus] | None = None
         self._known_delivery_times: dict[str, tuple[str | None, str | None]] | None = (
@@ -90,6 +93,18 @@ class SwissPostAccountCoordinator(DataUpdateCoordinator[dict[str, list[dict]]]):
             if user_value is not None:
                 parcel["contents"] = user_value
         return parcel
+
+    @callback
+    def async_reapply_contents(self) -> None:
+        """Re-read the contents store into the published parcels, without a poll."""
+        for parcels in (self.data or {}).values():
+            for parcel in parcels:
+                parcel["contents"] = None
+                if code := self._parcel_codes.get(id(parcel), parcel["barcode"]):
+                    user_value = self.contents_store.get(code)
+                    if user_value is not None:
+                        parcel["contents"] = user_value
+        self.async_update_listeners()
 
     @property
     def current_tier_minutes(self) -> int | None:
@@ -198,6 +213,7 @@ class SwissPostAccountCoordinator(DataUpdateCoordinator[dict[str, list[dict]]]):
         self.known_codes = frozenset(
             normalize_code(p["barcode"]) for p in parcels if p["barcode"]
         )
+        self._parcel_codes = {id(p): p["barcode"] or "" for p in parcels}
         incoming = [
             p
             for p, item in zip(parcels, raw_items, strict=True)
