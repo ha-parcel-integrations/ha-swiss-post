@@ -233,9 +233,10 @@ buckets through it, never `coordinator.data` directly.
   `_async_update_data`.** It is the only exception `DataUpdateCoordinator` turns
   into HA's reauth flow; re-raising our own error gets swallowed into
   `ConfigEntryNotReady` and the entry retries a dead chain forever.
-- **Letters are excluded** (`mailpieceType == "LETTER"`). Swiss Post has no
-  envelope-scan feature like PostNL's, so a letter is just a thinner parcel —
-  deliberately filtered rather than surfaced. An unknown type is kept.
+- **Letters are imported as parcels** (`mailpieceType == "LETTER"`). The inbox
+  reports them with the same element and status enum, and Swiss Post has no
+  envelope-scan feature like PostNL's, so there is no separate letter entity —
+  same as letter post on a tracking hub (#23).
 - **The overview is a summary**: no weight, dimensions or event timeline.
   Those come from a per-parcel enrichment call behind the `account_details`
   option (see below).

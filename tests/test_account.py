@@ -27,7 +27,6 @@ from custom_components.swiss_post.account.client import (
 )
 from custom_components.swiss_post.account.coordinator import SwissPostAccountCoordinator
 from custom_components.swiss_post.account.parcels import (
-    is_letter,
     is_outgoing,
     map_account_status,
     normalize_account_parcel,
@@ -129,14 +128,6 @@ def test_map_account_status_warns_once_on_an_unmapped_value(caplog):
 def test_map_account_status_is_silent_on_a_missing_value(caplog):
     assert map_account_status(None) is ParcelStatus.UNKNOWN
     assert not caplog.records
-
-
-def test_is_letter_only_matches_an_explicit_letter():
-    assert is_letter(account_element(mailpiece_type="LETTER"))
-    assert not is_letter(account_element(mailpiece_type="PARCEL"))
-    # An unexpected type is kept, so a parcel is never silently dropped.
-    assert not is_letter(account_element(mailpiece_type="UNKNOWN"))
-    assert not is_letter({})
 
 
 def test_is_outgoing_reads_the_sender_flag():
@@ -941,8 +932,8 @@ async def test_coordinator_reraises_an_unexpected_enrichment_error(hass):
     assert coordinator.last_update_success is False
 
 
-async def test_coordinator_excludes_letters(hass):
-    """Letters are out of scope — Swiss Post has no scan-preview feature."""
+async def test_coordinator_imports_letters_like_parcels(hass):
+    """The inbox reports letter post with the parcel status vocabulary."""
     _, data = await _refresh(
         hass,
         overview_response(
@@ -952,7 +943,10 @@ async def test_coordinator_excludes_letters(hass):
             ]
         ),
     )
-    assert [p["barcode"] for p in data["incoming_active"]] == [ACCOUNT_IN_ID]
+    assert [p["barcode"] for p in data["incoming_active"]] == [
+        ACCOUNT_IN_ID,
+        ACCOUNT_LETTER_ID,
+    ]
 
 
 async def test_coordinator_handles_an_empty_inbox(hass):

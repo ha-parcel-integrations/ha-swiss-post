@@ -72,16 +72,6 @@ def map_account_status(code: str | None) -> ParcelStatus:
     return ParcelStatus.UNKNOWN
 
 
-def is_letter(raw: dict[str, Any]) -> bool:
-    """Whether this inbox item is a letter rather than a parcel.
-
-    Letters are excluded from this integration (no scan-preview feature exists
-    on Swiss Post's side). An unknown ``mailpieceType`` is kept, so a parcel is
-    never dropped for an unexpected type value.
-    """
-    return str(raw.get("mailpieceType", "")).upper() == "LETTER"
-
-
 def is_outgoing(raw: dict[str, Any]) -> bool:
     """Whether the logged-in user is the sender of this item.
 

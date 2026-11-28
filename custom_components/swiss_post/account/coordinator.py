@@ -43,7 +43,7 @@ from .client import (
     SwissPostAccountForbidden,
     SwissPostAccountReauthRequired,
 )
-from .parcels import is_letter, is_outgoing, normalize_account_parcel
+from .parcels import is_outgoing, normalize_account_parcel
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -195,7 +195,7 @@ class SwissPostAccountCoordinator(DataUpdateCoordinator[dict[str, list[dict]]]):
             item
             for key in ("inProgress", "completed")
             for item in (payload.get(key) or [])
-            if isinstance(item, dict) and not is_letter(item)
+            if isinstance(item, dict)
         ]
 
         # The inbox is a summary; weight, dimensions and the event timeline need
